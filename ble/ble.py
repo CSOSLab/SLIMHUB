@@ -5,19 +5,24 @@ from datetime import datetime
 import soundfile as sf
 from functools import partial
 import numpy as np
+import time
 
 lookup=[]
 room={}
 room["0001"]="KITCHEN"
-room["0002"]="LIVINGROOM"
-room["0003"]="MAINROOM"
-room["0004"]="ROOM1"
-room["0005"]="ROOM2"
-room["0006"]="TOILET"
+room["0002"]="LIVING"
+room["0003"]="ROOM"
+room["0004"]="TOILET"
+room["0005"]="HOME_ENTRANCE"
+room["0006"]="LIVING_ENTRANCE"
+room["0007"]="KITCHEN_ENTRANCE"
+room["0008"]="STAIR"
+
 
 device={}
-device["0001"]="THINGY53"
-device["0002"]="ATT"
+device["0001"]="ADL_DETECTOR"
+device["0002"]="THINGY53"
+device["0003"]="ATT"
 
 data_type={}
 data_type["0001"]="RAW"
@@ -30,6 +35,7 @@ lookup.append(room)
 lookup.append(device)
 lookup.append(data_type)
 
+pcm_buffer = {}
 # /** Intel ADPCM step variation table */
 INDEX_TABLE = [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8,]
 
@@ -99,15 +105,21 @@ def adpcm_decode(adpcm) :
 async def scan():
     target_devices = []
     devices = await BleakScanner.discover()
+    #print(devices)
+    # print(devices)
     for dev in devices:
         if dev.name.split("_")[0] == 'ADL':
             target_devices.append(dev)
     return target_devices
 
-pcm_buffer = []
+
 def notify_callback(dev,sender, data):
     # print(dev)
-    # print(f"{sender}: {data}")
+   
+
+    if int((datetime.utcnow()-datetime(1970, 1, 1)).total_seconds())%60==0:
+        print(lookup[0][str(dev.address)+str(sender.handle)],datetime.utcnow())
+        
     if len(data) == 32:
         tmp_data=[]
         for i in range(8):
@@ -117,16 +129,12 @@ def notify_callback(dev,sender, data):
         save_file_at_dir(lookup[0][str(dev.address)+str(sender.handle)],str(datetime.now().strftime("%Y.%m.%d"))+".txt",int.from_bytes(data,"little"))
     else:
         pcm = adpcm_decode(data)
-        pcm_buffer.extend(pcm)
-        if(len(pcm_buffer) > 160000) :
-            # wavform = np.array(pcm_buffer[:16000])
-            # inference(wavform)
-            # now = datetime.now()
-            # current_time = now.strftime("%H%M%S")
-            print(lookup[0][str(dev.address)+str(sender.handle)]+"/"+str(datetime.now().strftime("%Y.%m.%d.%H.%M.%S"))+".wav")
-            sf.write(lookup[0][str(dev.address)+str(sender.handle)]+"/"+str(datetime.now().strftime("%Y.%m.%d.%H.%M.%S"))+".wav", pcm_buffer, 16000, 'PCM_16')
-            # print("wav_saved")
-            pcm_buffer.clear()
+        pcm_buffer[str(dev.address)+str(sender.handle)].extend(pcm)
+        print(len(pcm_buffer[str(dev.address)+str(sender.handle)]))
+        if(len(pcm_buffer[str(dev.address)+str(sender.handle)]) >= 160000) :
+            print(f"{sender}: {data}")
+            sf.write(lookup[0][str(dev.address)+str(sender.handle)]+"/"+str(datetime.now().strftime("%Y.%m.%d.%H.%M.%S"))+".wav", pcm_buffer[str(dev.address)+str(sender.handle)], 16000, 'PCM_16')
+            pcm_buffer[str(dev.address)+str(sender.handle)].clear()
      
 def disconnected_callback(client):
     print(f'Device {client.address} disconnected')
@@ -136,13 +144,11 @@ async def work(dev):
     while True:
         try:
             async with BleakClient(dev.address) as client:
-                print(dev.name)
                 client.set_disconnected_callback(disconnected_callback)
                 services = await client.get_services()
                 for service in services:
                     for characteristic in service.characteristics:
                         try:
-
                             # print('  uuid:', characteristic.uuid)
                             # print('  handle:', characteristic.handle) 
                             # print('  properties: ', characteristic.properties)
@@ -152,36 +158,45 @@ async def work(dev):
                                     path=os.path.join(path,dev.name.split("_")[1])
                                 if lookup[i].get(characteristic.uuid.split("-")[i]) !=None:
                                     path=os.path.join(path,lookup[i].get(characteristic.uuid.split("-")[i]))
+                                    if lookup[i].get(characteristic.uuid.split("-")[i]) == "SOUND":
+                                        pcm_buffer[str(dev.address)+str(characteristic.handle)]=[]
+                                        print(pcm_buffer)
                                 else:
                                     raise NotImplementedError
                             lookup[0][str(dev.address)+str(characteristic.handle)]=path
+                            print(lookup[0][str(dev.address)+str(characteristic.handle)])
                             os.makedirs(path, exist_ok=True)
-                            # print(lookup[0])
                             await client.start_notify(characteristic.uuid, partial(notify_callback,dev))
                         except:
-                            print("character uuid error")
+                            pass
+                            #print("character uuid error")
                 while client.is_connected :            
                     await asyncio.sleep(5.0)
-            print(f'Work task for {dev.address} end')
         except Exception as e:
-            print("connection retry")
+            pass
+            #print("connection retry")
 
+task_list = []
 async def main():
-    target_devices = await scan()
-    task_list = []
-    print(target_devices)
-    for dev in target_devices:
-        work_task = asyncio.create_task(work(dev))
-        task_list.append(work_task)
-    
-    for task in task_list :
-        await task
-    print("Main task end")
+#    target_device=await scan()
+#    print(target_device)
+    while True:
+        try:
+            target_devices = await scan()
+            for dev in target_devices:
+                if str(dev) not in task_list:
+                    print(dev, "find")
+                    work_task = asyncio.create_task(work(dev))
+                    print("sleep on")
+                    await asyncio.sleep(5.0)
+                    print("sleep off")
+                    task_list.append(str(dev))
+        except:
+            pass
+        await asyncio.sleep(10.0)
 
 def save_file_at_dir(dir_path, filename, file_content, mode='a'):
-    
-    with open(os.path.join(dir_path, filename), mode) as f:
-        
+    with open(os.path.join(dir_path, filename), mode) as f:     
         if "list" in str(type(file_content)):
             data_str=str(file_content[0])+"."+str(file_content[1])+","+\
             str(file_content[2])+"."+str(file_content[3])+","+\
@@ -192,4 +207,6 @@ def save_file_at_dir(dir_path, filename, file_content, mode='a'):
             f.write(datetime.now().strftime("%X")+":    "+str(file_content)+"\n")
 
 if __name__ == "__main__":
+    print("run main")
     asyncio.run(main())
+        
