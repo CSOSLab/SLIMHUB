@@ -35,7 +35,10 @@ lookup.append(room)
 lookup.append(device)
 lookup.append(data_type)
 
+task_ok={}
+
 pcm_buffer = {}
+#pcm_buffer = []
 # /** Intel ADPCM step variation table */
 INDEX_TABLE = [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8,]
 
@@ -117,8 +120,8 @@ def notify_callback(dev,sender, data):
     # print(dev)
    
 
-    if int((datetime.utcnow()-datetime(1970, 1, 1)).total_seconds())%60==0:
-        print(lookup[0][str(dev.address)+str(sender.handle)],datetime.utcnow())
+#    if int((datetime.utcnow()-datetime(1970, 1, 1)).total_seconds())%60==0:
+#        print(lookup[0][str(dev.address)+str(sender.handle)],datetime.utcnow())
         
     if len(data) == 32:
         tmp_data=[]
@@ -128,22 +131,27 @@ def notify_callback(dev,sender, data):
     elif len(data)==1:
         save_file_at_dir(lookup[0][str(dev.address)+str(sender.handle)],str(datetime.now().strftime("%Y.%m.%d"))+".txt",int.from_bytes(data,"little"))
     else:
+#         print(f"{sender}: {data}")
         pcm = adpcm_decode(data)
         pcm_buffer[str(dev.address)+str(sender.handle)].extend(pcm)
-        print(len(pcm_buffer[str(dev.address)+str(sender.handle)]))
+#        pcm_buffer.extend(pcm)
+#        print(len(pcm_buffer))
         if(len(pcm_buffer[str(dev.address)+str(sender.handle)]) >= 160000) :
-            print(f"{sender}: {data}")
+#        if(len(pcm_buffer) >= 160000) :
+            #print(f"{sender}: wav saved")
             sf.write(lookup[0][str(dev.address)+str(sender.handle)]+"/"+str(datetime.now().strftime("%Y.%m.%d.%H.%M.%S"))+".wav", pcm_buffer[str(dev.address)+str(sender.handle)], 16000, 'PCM_16')
+#            sf.write(lookup[0][str(dev.address)+str(sender.handle)]+"/"+str(datetime.now().strftime("%Y.%m.%d.%H.%M.%S"))+".wav", pcm_buffer, 16000, 'PCM_16')
             pcm_buffer[str(dev.address)+str(sender.handle)].clear()
+#            pcm_buffer.clear()
      
 def disconnected_callback(client):
     print(f'Device {client.address} disconnected')
-
 
 async def work(dev):
     while True:
         try:
             async with BleakClient(dev.address) as client:
+                
                 client.set_disconnected_callback(disconnected_callback)
                 services = await client.get_services()
                 for service in services:
@@ -160,7 +168,7 @@ async def work(dev):
                                     path=os.path.join(path,lookup[i].get(characteristic.uuid.split("-")[i]))
                                     if lookup[i].get(characteristic.uuid.split("-")[i]) == "SOUND":
                                         pcm_buffer[str(dev.address)+str(characteristic.handle)]=[]
-                                        print(pcm_buffer)
+                                        #print(pcm_buffer)
                                 else:
                                     raise NotImplementedError
                             lookup[0][str(dev.address)+str(characteristic.handle)]=path
@@ -168,13 +176,15 @@ async def work(dev):
                             os.makedirs(path, exist_ok=True)
                             await client.start_notify(characteristic.uuid, partial(notify_callback,dev))
                         except:
-                            pass
-                            #print("character uuid error")
-                while client.is_connected :            
+                            pass                
+
+                task_ok[dev]=False
+                while client.is_connected :
                     await asyncio.sleep(5.0)
         except Exception as e:
-            pass
             #print("connection retry")
+            pass
+            
 
 task_list = []
 async def main():
@@ -187,8 +197,10 @@ async def main():
                 if str(dev) not in task_list:
                     print(dev, "find")
                     work_task = asyncio.create_task(work(dev))
+                    task_ok[dev]=True
                     print("sleep on")
-                    await asyncio.sleep(5.0)
+                    while task_ok[dev]:
+                        await asyncio.sleep(1.0)
                     print("sleep off")
                     task_list.append(str(dev))
         except:
