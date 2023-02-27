@@ -18,8 +18,10 @@ room["0006"] = "LIVING_ENTRANCE"
 room["0007"] = "KITCHEN_ENTRANCE"
 room["0008"] = "STAIR"
 
-room["FFFF"] = "TEST"
-
+room["ff01"] = "RTLAB501"
+room["ff02"] = "RTLAB502"
+room["ff03"] = "RTLAB503"
+room["ffff"] = "TEST"
 
 device = {}
 device["0001"] = "ADL_DETECTOR"
@@ -52,7 +54,7 @@ STEP_SIZE_TABLE = [7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 
                    5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767]
 
 SAMPLE_RATE = 16000
-UNIT_WAV_SAMPLES = 16384
+UNIT_WAV_SAMPLES = 16000
 
 
 def adpcm_decode(adpcm):
@@ -120,7 +122,7 @@ async def scan():
     # print(devices)
     # print(devices)
     for dev in devices:
-        if dev.name.split("_")[0] == 'ADL':
+        if dev.name.split("_")[0] == 'ABL':
             target_devices.append(dev)
     return target_devices
 
@@ -130,7 +132,7 @@ def notify_callback(dev, sender, data):
 
     # if int((datetime.utcnow()-datetime(1970, 1, 1)).total_seconds())%60==0:
     #     print(lookup[0][str(dev.address)+str(sender.handle)],datetime.utcnow())
-
+    # print(len(data))
     if len(data) == 32:
         tmp_data = []
         for i in range(8):
@@ -145,10 +147,10 @@ def notify_callback(dev, sender, data):
         pcm = adpcm_decode(data)
         pcm_buffer[str(dev.address)+str(sender.handle)].extend(pcm)
         # pcm_buffer.extend(pcm)
-        # print(len(pcm_buffer))
-        if (len(pcm_buffer[str(dev.address)+str(sender.handle)]) >= UNIT_WAV_SAMPLES*10):
-            # if(len(pcm_buffer) >= 160000) :
-            #     print(f"{sender}: wav saved")
+        # print(len(pcm_buffer[str(dev.address)+str(sender.handle)]))
+        if (len(pcm_buffer[str(dev.address)+str(sender.handle)]) >= (UNIT_WAV_SAMPLES*10)):
+        # if(len(pcm_buffer) >= 160000) :
+            print(f"{sender}: wav saved")
             sf.write(lookup[0][str(dev.address)+str(sender.handle)]+"/"+str(datetime.now().strftime(
                 "%Y.%m.%d.%H.%M.%S"))+".wav", pcm_buffer[str(dev.address)+str(sender.handle)], SAMPLE_RATE, 'PCM_16')
             # sf.write(lookup[0][str(dev.address)+str(sender.handle)]+"/"+str(datetime.now().strftime("%Y.%m.%d.%H.%M.%S"))+".wav", pcm_buffer, 16000, 'PCM_16')
