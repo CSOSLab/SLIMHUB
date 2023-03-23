@@ -2,7 +2,6 @@ import asyncio
 import os
 from bleak import *
 from datetime import datetime
-import soundfile as sf
 from functools import partial
 import numpy as np
 import time
@@ -10,7 +9,8 @@ import struct
 import json
 import paho.mqtt.client as mqtt
 
-from sound_service import *
+import sound_service as snd
+import tensorflow_lite as tflite
 
 lookup = []
 room = {}
@@ -49,28 +49,38 @@ lookup.append(data_type)
 task_ok = {}
 
 # Sound service variables ---------------------------------------------------------------------
-pcm_buffer = {}
+pcm_buffer_save = {}
+pcm_buffer_inference = {}
+
 # pcm_buffer = []
 SAMPLE_RATE = 16000
-UNIT_WAV_SAMPLES = 16384
+UNIT_WAV_SAMPLES = 16000
+
+tflite_sound_interpreter = {}
+
+labels = ['speech' 'microwave' 'vacuuming' 'tv' 'eating' 'drop' 'smoke_extractor'
+          'cooking' 'dish_clanging' 'peeing' 'chopping' 'water_flowing'
+          'toilet_flushing' 'walking' 'brushing_teeth']
+sound_model_path = "models/sample_sound_model.tflite"
 
 class Mqtt():
-    def __init__(self, ip,port,id,passwd):
+    def __init__(self, ip, port, id, passwd):
         self.ip = ip
         self.port = port
-        self.id=id
-        self.passwd=passwd
+        self.id = id
+        self.passwd = passwd
         self.client = mqtt.Client("Foot_Pressure")
 
     def connect(self):
-        self.client.username_pw_set(username=self.id,password=self.passwd)
+        self.client.username_pw_set(username=self.id, password=self.passwd)
         self.client.connect(self.ip, self.port)
 
-    def publish(self,topic,message):
-        self.client.publish(topic,message)
+    def publish(self, topic, message):
+        self.client.publish(topic, message)
 
     def disconnect(self):
         self.client.disconnect()
+
 
 async def scan():
     target_devices = []
@@ -78,7 +88,7 @@ async def scan():
     # print(devices)
     # print(devices)
     for dev in devices:
-        if dev.name.split("_")[0] == 'ADL':
+        if dev.name.split("_")[0] == 'ABL':
             target_devices.append(dev)
     return target_devices
 
@@ -88,12 +98,29 @@ def notify_callback(dev, sender, data):
         save_file_at_dir(lookup[0][str(dev.address)+str(sender.handle)],
                          str(datetime.now().strftime("%Y.%m.%d"))+".txt", data)
     else:
-        pcm = adpcm_decode(data)
-        pcm_buffer[str(dev.address)+str(sender.handle)].extend(pcm)
-        if (len(pcm_buffer[str(dev.address)+str(sender.handle)]) >= (UNIT_WAV_SAMPLES*10)):
-            sf.write(lookup[0][str(dev.address)+str(sender.handle)]+"/"+str(datetime.now().strftime("%Y.%m.%d.%H.%M.%S"))+".wav",
-                     pcm_buffer[str(dev.address)+str(sender.handle)], SAMPLE_RATE, 'PCM_16')
-            pcm_buffer[str(dev.address)+str(sender.handle)].clear()
+        pcm = snd.adpcm_decode(data)
+        pcm_buffer_save[str(dev.address)+str(sender.handle)].extend(pcm)
+        pcm_buffer_inference[str(dev.address)+str(sender.handle)].extend(pcm)
+
+        if (len(pcm_buffer_save[str(dev.address)+str(sender.handle)]) >= (UNIT_WAV_SAMPLES*5)):
+            snd.save_wav(lookup[0][str(dev.address)+str(sender.handle)]+"/"+str(datetime.now().strftime("%Y.%m.%d.%H.%M.%S"))+".wav",
+                         pcm_buffer_save[str(dev.address)+str(sender.handle)], SAMPLE_RATE)
+            pcm_buffer_save[str(dev.address)+str(sender.handle)].clear()
+
+        if (len(pcm_buffer_inference[str(dev.address)+str(sender.handle)]) >= (UNIT_WAV_SAMPLES)):
+            mfcc = snd.get_mfcc(pcm_buffer_inference[str(dev.address)+str(sender.handle)][:UNIT_WAV_SAMPLES],
+                            sr=SAMPLE_RATE, n_mfcc=32, n_mels=64, n_fft=1000, n_hop=500)
+
+            pcm_buffer_inference[str(dev.address)+str(sender.handle)].clear()
+
+            result = tflite.inference(
+                tflite_sound_interpreter[str(dev.address)+str(sender.handle)], mfcc)
+            print(str(dev.address)+':')
+            if np.max(result) < 0.8:
+                print("Unknown sound")
+            else:
+                print(np.argmax(result))
+                # print(np.max(result))
 
 
 def disconnected_callback(client):
@@ -118,15 +145,16 @@ async def work(dev):
                                 if lookup[i].get(characteristic.uuid.split("-")[i]) != None:
                                     path = os.path.join(path, lookup[i].get(
                                         characteristic.uuid.split("-")[i]))
+                                    # print(lookup[i].get(characteristic.uuid.split("-")[i]))
                                     if lookup[i].get(characteristic.uuid.split("-")[i]) == "SOUND":
-                                        pcm_buffer[str(
-                                            dev.address)+str(characteristic.handle)] = []
+                                        pcm_buffer_save[str(dev.address)+str(characteristic.handle)] = []
+                                        pcm_buffer_inference[str(dev.address)+str(characteristic.handle)] = []
+                                        tflite_sound_interpreter[str(
+                                            dev.address)+str(characteristic.handle)] = tflite.set_interpreter(sound_model_path)
                                 else:
                                     raise NotImplementedError
-                            lookup[0][str(dev.address) +
-                                      str(characteristic.handle)] = path
-                            print(lookup[0][str(dev.address) +
-                                  str(characteristic.handle)])
+                            lookup[0][str(dev.address)+str(characteristic.handle)] = path
+                            print(lookup[0][str(dev.address)+str(characteristic.handle)])
                             os.makedirs(path, exist_ok=True)
                             await client.start_notify(characteristic.uuid, partial(notify_callback, dev))
                         except:
@@ -191,7 +219,8 @@ def save_file_at_dir(dir_path, filename, file_content, mode='a'):
             f.write(datetime.now().strftime("%X")+","+aat_msg+"\n")
         else:
             if os.path.getsize(os.path.join(dir_path, filename)) == 0:
-                f.write("time,press,temp,humid,gas_raw,iaq,s_iaq,eco2,bvoc,gas_percent,clear\n")
+                f.write(
+                    "time,press,temp,humid,gas_raw,iaq,s_iaq,eco2,bvoc,gas_percent,clear\n")
             # data_str=str(file_content[0])+"."+str(file_content[1])+","+\
             # str(file_content[2])+"."+str(file_content[3])+","+\
             # str(file_content[4])+"."+str(file_content[5])+","+\

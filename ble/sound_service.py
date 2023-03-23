@@ -3,8 +3,6 @@ import numpy as np
 import soundfile as sf
 import librosa
 
-import tflite_runtime.interpreter as tflite
-
 # Intel ADPCM step variation table
 INDEX_TABLE = [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8,]
 
@@ -73,42 +71,15 @@ def adpcm_decode(adpcm: list):
     return pcm
 
 
-def extend_wav(pcm_buffer: list, pcm: list):
-    pcm_buffer.extend(pcm)
-
-    return pcm_buffer
-
-tflite_model_dir = "sound_model.tflite"
-tflite_interpreter = tflite.Interpreter(model_path=tflite_model_dir)
-
-tflite_interpreter.allocate_tensors()
-
-input_details = tflite_interpreter.get_input_details()[0]
-output_details = tflite_interpreter.get_output_details()[0]
-
-print("== Input details ==")
-print("name:", input_details['name'])
-print("shape:", input_details['shape'])
-print("type:", input_details['dtype'])
-print("index:", input_details['index'])
-
-print("\n== Output details ==")
-print("name:", output_details['name'])
-print("shape:", output_details['shape'])
-print("type:", output_details['dtype'])
-print("index:", input_details['index'])
+def save_wav(output_path, input, sr):
+    sf.write(output_path, input, sr, 'PCM_16')
+    print(output_path, 'saved')
 
 
-def inference(input_data):
-    input_data = np.expand_dims(input_data, axis=0)
+def get_mfcc(input, sr, n_mfcc, n_mels, n_fft, n_hop):
+    input_pcm = np.array(input, dtype=np.float32)
+    mfcc = librosa.feature.mfcc(y=input_pcm, sr=sr, n_mfcc=n_mfcc, n_mels=n_mels, n_fft=n_fft, hop_length=n_hop)
+    mfcc = mfcc[:,:-1]
+    mfcc = mfcc[..., np.newaxis]
 
-    tflite_interpreter.set_tensor(input_details['index'], input_data)
-
-    tflite_interpreter.invoke()
-
-    tflite_model_predictions = tflite_interpreter.get_tensor(
-        output_details['index'])
-
-    # output_probs = tf.math.softmax(tflite_model_predictions[0])
-    # pred_label = tf.math.argmax(output_probs)
-    return tflite_model_predictions[0]
+    return mfcc
