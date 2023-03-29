@@ -35,9 +35,10 @@ device["0003"] = "ATT"
 
 data_type = {}
 data_type["0001"] = "RAW"
-data_type["0002"] = "ACTION"
+data_type["0002"] = "GRIDEYE_ACTION"
 data_type["0003"] = "ENVIRONMENT"
 data_type["0004"] = "SOUND"
+data_type["0005"] = "AAT_ACTION"
 
 path = {}
 
@@ -62,6 +63,9 @@ labels = ['speech' 'microwave' 'vacuuming' 'tv' 'eating' 'drop' 'smoke_extractor
           'cooking' 'dish_clanging' 'peeing' 'chopping' 'water_flowing'
           'toilet_flushing' 'walking' 'brushing_teeth']
 sound_model_path = "models/sample_sound_model.tflite"
+
+global sh_id_str
+sh_id_str = "HMK0H001"
 
 class Mqtt():
     def __init__(self, ip, port, id, passwd):
@@ -88,15 +92,14 @@ async def scan():
     # print(devices)
     # print(devices)
     for dev in devices:
-        if dev.name.split("_")[0] == 'ABL':
+        if dev.name.split("_")[0] == 'ADL':
             target_devices.append(dev)
     return target_devices
 
 
 def notify_callback(dev, sender, data):
     if len(data) < 37:
-        save_file_at_dir(lookup[0][str(dev.address)+str(sender.handle)],
-                         str(datetime.now().strftime("%Y.%m.%d"))+".txt", data)
+        save_file_at_dir(lookup[0][str(dev.address)+str(sender.handle)],str(datetime.now().strftime("%Y.%m.%d"))+".txt",data)
     else:
         pcm = snd.adpcm_decode(data)
         pcm_buffer_save[str(dev.address)+str(sender.handle)].extend(pcm)
@@ -140,11 +143,9 @@ async def work(dev):
                             path = os.getcwd()+"/data"
                             for i in range(1, 4):
                                 if i == 3:
-                                    path = os.path.join(
-                                        path, dev.name.split("_")[1])
+                                    path = os.path.join(path, dev.name.split("_")[1])
                                 if lookup[i].get(characteristic.uuid.split("-")[i]) != None:
-                                    path = os.path.join(path, lookup[i].get(
-                                        characteristic.uuid.split("-")[i]))
+                                    path = os.path.join(path, lookup[i].get(characteristic.uuid.split("-")[i]))
                                     # print(lookup[i].get(characteristic.uuid.split("-")[i]))
                                     if lookup[i].get(characteristic.uuid.split("-")[i]) == "SOUND":
                                         pcm_buffer_save[str(dev.address)+str(characteristic.handle)] = []
@@ -209,6 +210,8 @@ def save_file_at_dir(dir_path, filename, file_content, mode='a'):
             grideye_msg = grideye_msg.replace("(", "").replace(")", "")
             grideye_msg = grideye_msg.replace(",,", ",")
             f.write(datetime.now().strftime("%X")+","+grideye_msg+"\n")
+
+            mqtt_msg_dict = {}
         elif len(file_content) == 10:
             aat_msg = ""
             aat_unpacked = struct.unpack("<BBBBBBBBBB", file_content)
@@ -217,10 +220,15 @@ def save_file_at_dir(dir_path, filename, file_content, mode='a'):
             aat_msg = aat_msg.replace("(", "").replace(")", "")
             aat_msg = aat_msg.replace(",,", ",")
             f.write(datetime.now().strftime("%X")+","+aat_msg+"\n")
+
+            found_location = dir_path[(dir_path.find("data/")+5):(dir_path.find("/AAT"))]
+            mqtt_msg_dict = {}
+            mqtt_msg_dict.update(SH_ID=sh_id_str)
+            mqtt_msg_dict.update(location=found_location)
+            # mqtt_msg_dict.update(aat=)
         else:
             if os.path.getsize(os.path.join(dir_path, filename)) == 0:
-                f.write(
-                    "time,press,temp,humid,gas_raw,iaq,s_iaq,eco2,bvoc,gas_percent,clear\n")
+                f.write("time,press,temp,humid,gas_raw,iaq,s_iaq,eco2,bvoc,gas_percent,clear\n")
             # data_str=str(file_content[0])+"."+str(file_content[1])+","+\
             # str(file_content[2])+"."+str(file_content[3])+","+\
             # str(file_content[4])+"."+str(file_content[5])+","+\
@@ -237,38 +245,13 @@ def save_file_at_dir(dir_path, filename, file_content, mode='a'):
             log_msg = log_msg.replace("(", "").replace(")", "")
             log_msg = log_msg.replace(",,", ",")
 
-            # press_i,press_d=mqtt_data(file_content[0])
-            # temp_i,temp_d=mqtt_data(file_content[1])
-            # humid_i,humid_d=mqtt_data(file_content[2])
-            # gas_raw_i,gas_raw_d=mqtt_data(file_content[3])
-            # iaq_i,iaq_d=mqtt_data(file_content[4])
-            # s_iaq_i,s_iaq_d=mqtt_data(file_content[5])
-            # eco2_i,eco2_d=mqtt_data(file_content[6])
-            # bvoc_i,bvoc_d=mqtt_data(file_content[7])
-            # gas_percent_i,gas_percent_d=mqtt_data(file_content[8])
-            # print(press_i,press_d,file_content[0])
-            # print(temp_i,temp_d,file_content[1])
-            # print(humid_i,humid_d,file_content[2])
-            # print(gas_raw_i,gas_raw_d,file_content[3])
-            # print(iaq_i,iaq_d,file_content[4])
-            # print(s_iaq_i,s_iaq_d,file_content[5])
-            # print(eco2_i,eco2_d,file_content[6])
-            # print(bvoc_i,bvoc_d,file_content[7])
-            # print(gas_percent_i,gas_percent_d,file_content[8])
-            # print("++++++++++++++++++++++++")
-            # red=str("%04x"%00)
-            # green=str("%04x"%00)
-            # blue=str("%04x"%00)
-            # clear=str("%04x"%00)
+
 
             # mqtt_msg=press_i+press_d+temp_i+temp_d+humid_i+gas_raw_i+eco2_i+bvoc_i+red+green+blue+clear
             # message="{\"HEADER\":{\"PAAR_ID\":\"FF00FF00\",\"SH_ID\":\"ABCDEFGH\",\"SERVICE_ID\":\"18\",\"DEVICE_TYPE\":\"01\",\"LOCATION\":\"RTLAB502\",\"TIME\":\"2022-11-29 17:01:29\"},\"BODY\":{\"DATA\":{\"CMD\":\"ff\",\"ENV\":\""+file_content.hex()+"\"}}}"
             log_msg_mqtt = log_msg.split(",")
             # JSON formatting
-            global sh_id_str
-            sh_id_str = "HMK0H001"
-            found_location = dir_path[(dir_path.find(
-                "data/")+5):(dir_path.find("/ADL_DETECTOR"))]
+            found_location = dir_path[(dir_path.find("data/")+5):(dir_path.find("/ADL_DETECTOR"))]
             mqtt_msg_dict = {}
             mqtt_msg_dict.update(SH_ID=sh_id_str)
             mqtt_msg_dict.update(location=found_location)
@@ -288,15 +271,15 @@ def save_file_at_dir(dir_path, filename, file_content, mode='a'):
             print(mqtt_msg_json)
 
             mqtt_msg = datetime.now().strftime("%X")+","+log_msg+file_content.hex()
-            # print("[MQTT] : " + mqtt_msg)
+            print("[MQTT] : " + mqtt_msg_json)
             # print("[LOG] : " + datetime.now().strftime("%X")+","+log_msg)
-            # mqtt.publish("CSOS/AB001309/010000D1/SMARTHUB",message)
+            mqtt.publish("/CSOS/ADL/ENVDATA",mqtt_msg_json)
             f.write(datetime.now().strftime("%X")+","+file_msg+"\n")
 
 
 if __name__ == "__main__":
-    # print("Mqtt On")
-    # mqtt=Mqtt("155.230.186.105",1883,"rtlab_SUB","RTLab123!")
-    # mqtt.connect()
+    print("Mqtt On")
+    mqtt=Mqtt("155.230.186.52",1883,"csosMember","csos!1234")
+    mqtt.connect()
     print("Run Main")
     asyncio.run(main())
