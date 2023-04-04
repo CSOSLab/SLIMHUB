@@ -281,10 +281,16 @@ def save_file_at_dir(dir_path, filename, file_content, mode='a'):
             mqtt_msg_dict.update(rawdata=file_content.hex())
             
             mqtt_msg_json = json.dumps(mqtt_msg_dict)
-            print(mqtt_msg_json)
+            # print(mqtt_msg_json)
             
             mqtt_msg = datetime.now().strftime("%X")+","+log_msg+file_content.hex()
-            print("[MQTT] : " + mqtt_msg_json)
+            print("[MQTT] : " + found_location
+                    + "||"
+                    + "\ttemp: " + log_msg_mqtt[1] 
+                    + "\thumid: " + log_msg_mqtt[2]
+                    + "\tiaq: " + log_msg_mqtt[4]
+                    + "\teco2: " + log_msg_mqtt[6]
+                    + "\tbvoc " + log_msg_mqtt[7])
             # print("[LOG] : " + datetime.now().strftime("%X")+","+log_msg)
             mqtt.publish("/CSOS/ADL/ENVDATA",mqtt_msg_json)
             f.write(datetime.now().strftime("%X")+","+file_msg+"\n")
