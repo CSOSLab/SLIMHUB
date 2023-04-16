@@ -10,48 +10,49 @@ import json
 import paho.mqtt.client as mqtt
 
 import sound_service as snd
-import tensorflow_lite as tflite
+# import tensorflow_lite as tflite
+from device import Device
 
-lookup = []
-room = {}
-room["0001"] = "KITCHEN"
-room["0002"] = "LIVING"
-room["0003"] = "ROOM"
-room["0004"] = "TOILET"
-room["0005"] = "HOME_ENTRANCE"
-room["0006"] = "LIVING_ENTRANCE"
-room["0007"] = "KITCHEN_ENTRANCE"
-room["0008"] = "STAIR"
+# lookup = []
+# room = {}
+# room["0001"] = "KITCHEN"
+# room["0002"] = "LIVING"
+# room["0003"] = "ROOM"
+# room["0004"] = "TOILET"
+# room["0005"] = "HOME_ENTRANCE"
+# room["0006"] = "LIVING_ENTRANCE"
+# room["0007"] = "KITCHEN_ENTRANCE"
+# room["0008"] = "STAIR"
 
-room["ff01"] = "RTLAB501"
-room["ff02"] = "RTLAB502"
-room["ff03"] = "RTLAB503"
-room["ffff"] = "TEST"
+# room["ff01"] = "RTLAB501"
+# room["ff02"] = "RTLAB502"
+# room["ff03"] = "RTLAB503"
+# room["ffff"] = "TEST"
 
-device = {}
-device["0001"] = "ADL_DETECTOR"
-device["0002"] = "THINGY53"
-device["0003"] = "ATT"
+# device = {}
+# device["0001"] = "ADL_DETECTOR"
+# device["0002"] = "THINGY53"
+# device["0003"] = "ATT"
 
-data_type = {}
-data_type["0001"] = "RAW"
-data_type["0002"] = "GRIDEYE_ACTION"
-data_type["0003"] = "ENVIRONMENT"
-data_type["0004"] = "SOUND"
-data_type["0005"] = "AAT_ACTION"
+# data_type = {}
+# data_type["0001"] = "RAW"
+# data_type["0002"] = "GRIDEYE_ACTION"
+# data_type["0003"] = "ENVIRONMENT"
+# data_type["0004"] = "SOUND"
+# data_type["0005"] = "AAT_ACTION"
 
-path = {}
+# path = {}
 
-lookup.append(path)
-lookup.append(room)
-lookup.append(device)
-lookup.append(data_type)
+# lookup.append(path)
+# lookup.append(room)
+# lookup.append(device)
+# lookup.append(data_type)
 
-task_ok = {}
+# task_ok = {}
 
-# Sound service variables ---------------------------------------------------------------------
-pcm_buffer_save = {}
-pcm_buffer_inference = {}
+# # Sound service variables ---------------------------------------------------------------------
+# pcm_buffer_save = {}
+# pcm_buffer_inference = {}
 
 # pcm_buffer = []
 SAMPLE_RATE = 16000
@@ -92,84 +93,84 @@ async def scan():
     # print(devices)
     # print(devices)
     for dev in devices:
-        if dev.name.split("_")[0] == 'ADL':
+        if dev.name.split("_")[0] == 'ADL-CHLEE':
             target_devices.append(dev)
     return target_devices
 
 
-def notify_callback(dev, sender, data):
-    if len(data) < 37:
-        save_file_at_dir(lookup[0][str(dev.address)+str(sender.handle)],str(datetime.now().strftime("%Y.%m.%d"))+".txt",data)
-    else:
-        pcm = snd.adpcm_decode(data)
-        pcm_buffer_save[str(dev.address)+str(sender.handle)].extend(pcm)
-        pcm_buffer_inference[str(dev.address)+str(sender.handle)].extend(pcm)
+# def notify_callback(dev, sender, data):
+#     if len(data) < 37:
+#         save_file_at_dir(lookup[0][str(dev.address)+str(sender.handle)],str(datetime.now().strftime("%Y.%m.%d"))+".txt",data)
+#     else:
+#         pcm = snd.adpcm_decode(data)
+#         pcm_buffer_save[str(dev.address)+str(sender.handle)].extend(pcm)
+#         pcm_buffer_inference[str(dev.address)+str(sender.handle)].extend(pcm)
 
-        if (len(pcm_buffer_save[str(dev.address)+str(sender.handle)]) >= (UNIT_WAV_SAMPLES*5)):
-            snd.save_wav(lookup[0][str(dev.address)+str(sender.handle)]+"/"+str(datetime.now().strftime("%Y.%m.%d.%H.%M.%S"))+".wav",
-                         pcm_buffer_save[str(dev.address)+str(sender.handle)], SAMPLE_RATE)
-            pcm_buffer_save[str(dev.address)+str(sender.handle)].clear()
+#         if (len(pcm_buffer_save[str(dev.address)+str(sender.handle)]) >= (UNIT_WAV_SAMPLES*5)):
+#             snd.save_wav(lookup[0][str(dev.address)+str(sender.handle)]+"/"+str(datetime.now().strftime("%Y.%m.%d.%H.%M.%S"))+".wav",
+#                          pcm_buffer_save[str(dev.address)+str(sender.handle)], SAMPLE_RATE)
+#             pcm_buffer_save[str(dev.address)+str(sender.handle)].clear()
 
-        if (len(pcm_buffer_inference[str(dev.address)+str(sender.handle)]) >= (UNIT_WAV_SAMPLES)):
-            mfcc = snd.get_mfcc(pcm_buffer_inference[str(dev.address)+str(sender.handle)][:UNIT_WAV_SAMPLES],
-                            sr=SAMPLE_RATE, n_mfcc=32, n_mels=64, n_fft=1000, n_hop=500)
+#         if (len(pcm_buffer_inference[str(dev.address)+str(sender.handle)]) >= (UNIT_WAV_SAMPLES)):
+#             mfcc = snd.get_mfcc(pcm_buffer_inference[str(dev.address)+str(sender.handle)][:UNIT_WAV_SAMPLES],
+#                             sr=SAMPLE_RATE, n_mfcc=32, n_mels=64, n_fft=1000, n_hop=500)
 
-            pcm_buffer_inference[str(dev.address)+str(sender.handle)].clear()
+#             pcm_buffer_inference[str(dev.address)+str(sender.handle)].clear()
 
-            result = tflite.inference(
-                tflite_sound_interpreter[str(dev.address)+str(sender.handle)], mfcc)
-            print(str(dev.address)+':')
-            if np.max(result) < 0.8:
-                print("Unknown sound")
-            else:
-                print(np.argmax(result))
-                # print(np.max(result))
-
-
-def disconnected_callback(client):
-    print(f'Device {client.address} disconnected, reason')
-    print(client)
+#             result = tflite.inference(
+#                 tflite_sound_interpreter[str(dev.address)+str(sender.handle)], mfcc)
+#             print(str(dev.address)+':')
+#             if np.max(result) < 0.8:
+#                 print("Unknown sound")
+#             else:
+#                 print(np.argmax(result))
+#                 # print(np.max(result))
 
 
-async def work(dev):
-    while True:
-        try:
-            async with BleakClient(dev.address) as client:
-                client.set_disconnected_callback(disconnected_callback)
-                services = await client.get_services()
-                for service in services:
-                    for characteristic in service.characteristics:
-                        try:
-                            path = os.getcwd()+"/data"
-                            for i in range(1, 4):
-                                if i == 3:
-                                    path = os.path.join(path, dev.name.split("_")[1])
-                                if lookup[i].get(characteristic.uuid.split("-")[i]) != None:
-                                    path = os.path.join(path, lookup[i].get(characteristic.uuid.split("-")[i]))
-                                    # print(lookup[i].get(characteristic.uuid.split("-")[i]))
-                                    if lookup[i].get(characteristic.uuid.split("-")[i]) == "SOUND":
-                                        pcm_buffer_save[str(dev.address)+str(characteristic.handle)] = []
-                                        pcm_buffer_inference[str(dev.address)+str(characteristic.handle)] = []
-                                        tflite_sound_interpreter[str(
-                                            dev.address)+str(characteristic.handle)] = tflite.set_interpreter(sound_model_path)
-                                else:
-                                    raise NotImplementedError
-                            lookup[0][str(dev.address)+str(characteristic.handle)] = path
-                            print(lookup[0][str(dev.address)+str(characteristic.handle)])
-                            os.makedirs(path, exist_ok=True)
-                            await client.start_notify(characteristic.uuid, partial(notify_callback, dev))
-                        except:
-                            pass
+# def disconnected_callback(client):
+#     print(f'Device {client.address} disconnected, reason')
+#     print(client)
 
-                task_ok[dev] = False
-                while client.is_connected:
-                    await asyncio.sleep(5.0)
-        except Exception as e:
-            pass
+
+# async def work(dev):
+#     while True:
+#         try:
+#             async with BleakClient(dev.address) as client:
+#                 client.set_disconnected_callback(disconnected_callback)
+#                 services = await client.get_services()
+#                 for service in services:
+#                     for characteristic in service.characteristics:
+#                         try:
+#                             path = os.getcwd()+"/data"
+#                             for i in range(1, 4):
+#                                 if i == 3:
+#                                     path = os.path.join(path, dev.name.split("_")[1])
+#                                 if lookup[i].get(characteristic.uuid.split("-")[i]) != None:
+#                                     path = os.path.join(path, lookup[i].get(characteristic.uuid.split("-")[i]))
+#                                     # print(lookup[i].get(characteristic.uuid.split("-")[i]))
+#                                     if lookup[i].get(characteristic.uuid.split("-")[i]) == "SOUND":
+#                                         pcm_buffer_save[str(dev.address)+str(characteristic.handle)] = []
+#                                         pcm_buffer_inference[str(dev.address)+str(characteristic.handle)] = []
+#                                         tflite_sound_interpreter[str(
+#                                             dev.address)+str(characteristic.handle)] = tflite.set_interpreter(sound_model_path)
+#                                 else:
+#                                     raise NotImplementedError
+#                             lookup[0][str(dev.address)+str(characteristic.handle)] = path
+#                             print(lookup[0][str(dev.address)+str(characteristic.handle)])
+#                             os.makedirs(path, exist_ok=True)
+#                             await client.start_notify(characteristic.uuid, partial(notify_callback, dev))
+#                         except:
+#                             pass
+
+#                 task_ok[dev] = False
+#                 while client.is_connected:
+#                     await asyncio.sleep(5.0)
+#         except Exception as e:
+#             pass
 
 
 task_list = []
-
+device_list = []
 
 async def main():
     while True:
@@ -177,14 +178,18 @@ async def main():
             target_devices = await scan()
             for dev in target_devices:
                 if str(dev) not in task_list:
-                    print(dev, "find")
-                    work_task = asyncio.create_task(work(dev))
-                    task_ok[dev] = True
-                    print("sleep on")
-                    while task_ok[dev]:
-                        await asyncio.sleep(1.0)
-                    print("sleep off")
+                    device = Device(dev)
+                    device.ble_worker_start()
+                    # print(dev, "find")
+                    # work_task = asyncio.create_task(work(dev))
+                    # task_ok[dev] = True
+                    # print("sleep on")
+                    # while task_ok[dev]:
+                    #     await asyncio.sleep(1.0)
+                    # print("sleep off")
                     task_list.append(str(dev))
+                    device_list.append(device)
+
         except:
             pass
         await asyncio.sleep(10.0)
