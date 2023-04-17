@@ -11,9 +11,8 @@ import struct
 import json
 
 import mqtt
-import sound_service as snd
+import sound_process as snd
 import tensorflow_lite as tflite
-
 
 SAMPLE_RATE = 16000
 UNIT_WAV_SAMPLES = 16000
@@ -62,8 +61,6 @@ class Device:
         self.sound_sample_rate = SAMPLE_RATE
         self.sound_unit_samples = UNIT_WAV_SAMPLES
         self.pcm_buffer = []
-        self.env_interpreter = None
-        self.speaker_interpreter = None
         
         self.pipe_ble, self.pipe_process = mp.Pipe()
 

@@ -13,11 +13,6 @@ from device import Device
 
 device_list = []
 
-labels = ['speech' 'microwave' 'vacuuming' 'tv' 'eating' 'drop' 'smoke_extractor'
-          'cooking' 'dish_clanging' 'peeing' 'chopping' 'water_flowing'
-          'toilet_flushing' 'walking' 'brushing_teeth']
-sound_model_path = "models/sample_sound_model.tflite"
-
 async def scan():
     target_devices = []
     devices = await BleakScanner.discover()

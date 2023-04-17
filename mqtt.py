@@ -19,4 +19,3 @@ class Mqtt():
 
     def disconnect(self):
         self.client.disconnect()
-
