@@ -14,38 +14,38 @@ import mqtt
 import sound_process as snd
 import tensorflow_lite as tflite
 
-SAMPLE_RATE = 16000
-UNIT_WAV_SAMPLES = 16000
+DEFAULT_SAMPLE_RATE = 16000
+DEFAULT_UNIT_SAMPLES = 16000
 
 class Device:
-    room = {}
-    room["0001"] = "KITCHEN"
-    room["0002"] = "LIVING"
-    room["0003"] = "ROOM"
-    room["0004"] = "TOILET"
-    room["0005"] = "HOME_ENTRANCE"
-    room["0006"] = "LIVING_ENTRANCE"
-    room["0007"] = "KITCHEN_ENTRANCE"
-    room["0008"] = "STAIR"
-
-    room["ff01"] = "RTLAB501"
-    room["ff02"] = "RTLAB502"
-    room["ff03"] = "RTLAB503"
-    room["ffff"] = "TEST"
-
-    device = {}
-    device["0001"] = "ADL_DETECTOR"
-    device["0002"] = "THINGY53"
-    device["0003"] = "ATT"
-
-    data_type = {}
-    data_type["0001"] = "RAW"
-    data_type["0002"] = "GRIDEYE_ACTION"
-    data_type["0003"] = "ENVIRONMENT"
-    data_type["0004"] = "SOUND"
-    data_type["0005"] = "AAT_ACTION"
-
-    lookup = [room, device, data_type]
+    lookup = {
+        'room': {
+            '0001': 'KITCHEN',
+            '0002': 'LIVING',
+            '0003': 'ROOM',
+            '0004': 'TOILET',
+            '0005': 'HOME_ENTRANCE',
+            '0006': 'LIVING_ENTRANCE',
+            '0007': 'KITCHEN_ENTRANCE',
+            '0008': 'STAIR',
+            'ff01': 'RTLAB501',
+            'ff02': 'RTLAB502',
+            'ff03': 'RTLAB503',
+            'ffff': 'TEST'
+        },
+        'device_type': {
+            '0001': 'ADL_DETECTOR',
+            '0002': 'THINGY53',
+            '0003': 'ATT'
+        },
+        'data_type': {
+            '0001': 'RAW',
+            '0002': 'GRIDEYE_ACTION',
+            '0003': 'ENVIRONMENT',
+            '0004': 'SOUND',
+            '0005': 'AAT_ACTION'
+        }
+    }
 
     mqtt = None
 
@@ -53,22 +53,32 @@ class Device:
         self.dev = dev
 
         self.device_name = dev.name
+        self.device_address = dev.address
         self.device_type = '' 
         self.device_location = ''
         
         self.path = {}
 
-        self.sound_sample_rate = SAMPLE_RATE
-        self.sound_unit_samples = UNIT_WAV_SAMPLES
+        self.sound_sample_rate = DEFAULT_SAMPLE_RATE
+        self.sound_unit_samples = DEFAULT_UNIT_SAMPLES
+        self.sound_length_sec = 5
+
+        self.pcm_buffer_save = []
         self.pcm_buffer = []
+        self.voting_buffer = []
+        self.voting_buffer_len = 9
         
         self.pipe_ble, self.pipe_process = mp.Pipe()
+        self.pipe_ble_sound, self.pipe_process_sound = mp.Pipe()
 
         self.ble_client = None
         self.process = None
-
+    
+    # def __del__(self):
+    #     self.terminate_all()
+        
     # tflite functions ------------------------------------------------------------
-    def set_env_interpreter(self, model_path):
+    def set_env_sound_interpreter(self, model_path):
         self.env_interpreter = tflite.set_interpreter(model_path)
 
     def set_speaker_interpreter(self, model_path):
@@ -153,46 +163,61 @@ class Device:
                 mqtt_msg_dict.update(rawdata=file_content.hex())
 
                 mqtt_msg_json = json.dumps(mqtt_msg_dict)
-                print(mqtt_msg_json)
+                # print(mqtt_msg_json)
 
                 mqtt_msg = datetime.now().strftime("%X")+","+log_msg+file_content.hex()
                 print("[MQTT] : " + mqtt_msg_json)
                 # print("[LOG] : " + datetime.now().strftime("%X")+","+log_msg)
                 self.mqtt.publish("/CSOS/ADL/ENVDATA",mqtt_msg_json)
                 f.write(datetime.now().strftime("%X")+","+file_msg+"\n")
-                
+                        
     def process_data(self):
         while True:
             sender, data = self.pipe_process.recv()
 
             if len(data) < 37:
                 self.save_file_at_dir(self.path[str(sender.handle)],str(datetime.now().strftime("%Y.%m.%d"))+".txt", data)
-            else:
-                pcm = snd.adpcm_decode(data)
-                self.pcm_buffer.extend(pcm)
+                
+    def process_sound(self):
+        window_hop = int(self.sound_unit_samples/2)
+        save_count = 0
 
-                if (len(self.pcm_buffer) >= (self.sound_unit_samples*5)):
+        while True:
+            sender, data = self.pipe_process_sound.recv()
+
+            pcm = snd.adpcm_decode(data)
+
+            self.pcm_buffer.extend(pcm)
+
+            # if (len(self.pcm_buffer_save) >= (self.sound_unit_samples*5)):
+            #     snd.save_wav(self.path[str(sender.handle)]+"/"+str(datetime.now().strftime("%Y.%m.%d.%H.%M.%S"))+".wav",
+            #                 self.pcm_buffer_save, self.sound_sample_rate)
+            #     self.pcm_buffer_save.clear()
+
+            if (len(self.pcm_buffer) >= (self.sound_unit_samples * self.sound_length_sec)):
+                save_count += 1
+                if window_hop*save_count >= (self.sound_unit_samples * self.sound_length_sec):
                     snd.save_wav(self.path[str(sender.handle)]+"/"+str(datetime.now().strftime("%Y.%m.%d.%H.%M.%S"))+".wav",
                                 self.pcm_buffer, self.sound_sample_rate)
-                    self.pcm_buffer.clear()
+                    save_count = 0
+                
+                mfcc = snd.get_mfcc(self.pcm_buffer[-self.sound_unit_samples:], sr=self.sound_sample_rate, n_mfcc=32, n_mels=64, n_fft=1000, n_hop=500)
 
-                # if (len(pcm_buffer_inference[str(self.dev.address)+str(sender.handle)]) >= (UNIT_WAV_SAMPLES)):
-                #     mfcc = snd.get_mfcc(pcm_buffer_inference[str(self.dev.address)+str(sender.handle)][:UNIT_WAV_SAMPLES],
-                #                     sr=SAMPLE_RATE, n_mfcc=32, n_mels=64, n_fft=1000, n_hop=500)
+                result = tflite.inference(self.env_interpreter, mfcc)
+                self.voting_buffer.append(result)
+                if len(self.voting_buffer) == self.voting_buffer_len:
+                    # Todo: postprocessing
+                    # print(len(self.voting_buffer))
+                    # print(np.mean(np.array(self.voting_buffer), axis=0))
+                    self.voting_buffer.pop(0)
 
-                #     pcm_buffer_inference[str(self.dev.address)+str(sender.handle)].clear()
-
-                #     result = tflite.inference(
-                #         tflite_sound_interpreter[str(self.dev.address)+str(sender.handle)], mfcc)
-                #     print(str(self.dev.address)+':')
-                #     if np.max(result) < 0.8:
-                #         print("Unknown sound")
-                #     else:
-                #         print(np.argmax(result))
-                #         # print(np.max(result))
+                self.pcm_buffer = self.pcm_buffer[window_hop:]
 
     def notify_callback(self, dev, sender, data):
         self.pipe_ble.send([sender, data])
+    
+    def sound_notify_callback(self, dev, sender, data):
+        self.pipe_ble_sound.send([sender, data])
 
     async def _ble_worker(self, disconnected_callback=None):
         self.ble_client = BleakClient(self.dev.address, disconnected_callback=disconnected_callback)
@@ -204,19 +229,22 @@ class Device:
                     try:
                         path = os.getcwd()+"/data"
 
-                        for i in range(3):
-                            if i == 2:
-                                path = os.path.join(path, self.dev.name.split("_")[1])
-                            if Device.lookup[i].get(characteristic.uuid.split("-")[i+1]) != None:
-                                path = os.path.join(path, Device.lookup[i].get(characteristic.uuid.split("-")[i+1]))
+                        uuid_split = characteristic.uuid.split("-")
 
-                            else:
-                                raise NotImplementedError
+                        self.device_location = Device.lookup['room'].get(uuid_split[1])
+                        self.device_type = Device.lookup['device_type'].get(uuid_split[2])
+                        current_data_type = Device.lookup['data_type'].get(uuid_split[3])
+
+                        path = os.path.join(path, self.device_location, self.device_type, self.device_address, current_data_type)
+                        
                         self.path[str(characteristic.handle)] = path
                         print(self.path[str(characteristic.handle)])
                         os.makedirs(path, exist_ok=True)
 
-                        await self.ble_client.start_notify(characteristic.uuid, partial(self.notify_callback, self.dev))
+                        if current_data_type == "SOUND":
+                            await self.ble_client.start_notify(characteristic.uuid, partial(self.sound_notify_callback, self.dev))
+                        else:
+                            await self.ble_client.start_notify(characteristic.uuid, partial(self.notify_callback, self.dev))
 
                     except Exception as e:
                         # print(e)
@@ -228,7 +256,17 @@ class Device:
 
         finally:
             self.process = mp.Process(target=self.process_data)
-            self.process.start() 
+            self.process.start()
+            self.sound_process = mp.Process(target=self.process_sound)
+            self.sound_process.start() 
     
     async def ble_client_start(self, disconnected_callback=None):
         await self._ble_worker(disconnected_callback)
+
+    def terminate_all(self):
+        self.process.terminate()
+        self.sound_process.terminate()
+        self.pipe_process.close()
+        self.pipe_ble.close()
+        self.pipe_process_sound.close()
+        self.pipe_ble_sound.close()

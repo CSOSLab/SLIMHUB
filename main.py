@@ -13,13 +13,15 @@ from device import Device
 
 device_list = []
 
+env_sound_model_path = 'models/sample_sound_model.tflite'
+
 async def scan():
     target_devices = []
     devices = await BleakScanner.discover()
     # print(devices)
     # print(devices)
     for dev in devices:
-        if dev.name.split("_")[0] == 'ADL':
+        if dev.name.split("_")[0] == 'ADL-CHLEE':
             target_devices.append(dev)
     return target_devices
 
@@ -35,7 +37,7 @@ def disconnected_callback(client):
     index = search_address(client.address)
     if index is not None:
         device = device_list.pop(index)
-        device.process.terminate()
+        device.terminate_all()
         del device
 
 async def ble_main():
@@ -49,10 +51,10 @@ async def ble_main():
                     print(dev, "find")
 
                     device = Device(dev)
-                    await device.ble_client_start(disconnected_callback)
-                    
-                    device_list.append(device)
+                    device.set_env_sound_interpreter(env_sound_model_path)
 
+                    await device.ble_client_start(disconnected_callback)
+                    device_list.append(device)
         except:
             pass
 
