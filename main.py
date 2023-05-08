@@ -21,11 +21,11 @@ async def scan():
     # print(devices)
     # print(devices)
     for dev in devices:
-        if dev.name.split("_")[0] == 'ADL-CHLEE':
+        if dev.name.split("_")[0] == 'ADL':
             target_devices.append(dev)
     return target_devices
 
-def search_address(address):
+def search_device(address):
     for device in device_list:
         if device.dev.address == address:
             return device_list.index(device)
@@ -34,7 +34,7 @@ def search_address(address):
 def disconnected_callback(client):
     print(f'Device {client.address} disconnected, reason')
     
-    index = search_address(client.address)
+    index = search_device(client.address)
     if index is not None:
         device = device_list.pop(index)
         device.terminate_all()
@@ -45,7 +45,7 @@ async def ble_main():
         try:
             target_devices = await scan()
             for dev in target_devices:
-                index = search_address(dev.address)
+                index = search_device(dev.address)
                 if index is None:
                 # if str(dev) not in task_list:
                     print(dev, "find")
@@ -55,10 +55,11 @@ async def ble_main():
 
                     await device.ble_client_start(disconnected_callback)
                     device_list.append(device)
-        except:
+        except Exception as e:
+            print(e)
             pass
 
-        await asyncio.sleep(10.0)
+        # await asyncio.sleep(10.0)
 
 if __name__ == "__main__":
     print("Mqtt On")

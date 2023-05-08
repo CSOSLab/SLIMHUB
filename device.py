@@ -1,4 +1,3 @@
-# %%
 import multiprocessing as mp
 import asyncio
 from bleak import *
@@ -63,7 +62,7 @@ class Device:
 
         self.sound_sample_rate = DEFAULT_SAMPLE_RATE
         self.sound_unit_samples = DEFAULT_UNIT_SAMPLES
-        self.sound_length_sec = 5
+        self.sound_length_sec = 30
 
         self.pcm_buffer_save = []
         self.pcm_buffer = []
@@ -196,6 +195,14 @@ class Device:
         while True:
             sender, data = self.pipe_process_sound.recv()
 
+            # Mic stop trigger packet: save wav and clear buffer
+            if data == b'\xff\xff\xff\xff':
+                snd.save_wav(self.path[str(sender.handle)]+"/"+str(datetime.now().strftime("%Y.%m.%d.%H.%M.%S"))+".wav",
+                                self.pcm_buffer, self.sound_sample_rate)
+                self.pcm_buffer.clear()
+                self.voting_buffer.clear()
+                continue
+            
             pcm = snd.adpcm_decode(data)
 
             self.pcm_buffer.extend(pcm)
@@ -206,15 +213,19 @@ class Device:
             #     self.pcm_buffer_save.clear()
 
             if (len(self.pcm_buffer) >= (self.sound_unit_samples * self.sound_length_sec)):
+                # Save wav files every 'sound_length_sec' sec
                 save_count += 1
                 if window_hop*save_count >= (self.sound_unit_samples * self.sound_length_sec):
                     snd.save_wav(self.path[str(sender.handle)]+"/"+str(datetime.now().strftime("%Y.%m.%d.%H.%M.%S"))+".wav",
                                 self.pcm_buffer, self.sound_sample_rate)
                     save_count = 0
                 
+                # Preprocess and inference
                 mfcc = snd.get_mfcc(self.pcm_buffer[-self.sound_unit_samples:], sr=self.sound_sample_rate, n_mfcc=32, n_mels=64, n_fft=1000, n_hop=500)
 
                 result = tflite.inference(self.env_interpreter, mfcc)
+
+                # Postprocessing
                 self.voting_buffer.append(result)
                 if len(self.voting_buffer) == self.voting_buffer_len:
                     # Todo: Postprocessing
