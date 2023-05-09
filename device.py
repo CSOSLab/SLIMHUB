@@ -49,6 +49,10 @@ class Device:
 
     mqtt = None
 
+    classlist = ['speech', 'microwave', 'vacuuming', 'tv', 'eating', 'drop', 'smoke_extractor',
+                 'cooking', 'dish_clanging', 'peeing', 'chopping', 'water_flowing',
+                 'toilet_flushing', 'walking', 'brushing_teeth']
+
     # Class functions ------------------------------------------------------------
     def __init__(self, dev):
         self.dev = dev
@@ -62,12 +66,15 @@ class Device:
 
         self.sound_sample_rate = DEFAULT_SAMPLE_RATE
         self.sound_unit_samples = DEFAULT_UNIT_SAMPLES
-        self.sound_length_sec = 30
+        self.sound_clip_length_sec = 30
 
         self.pcm_buffer_save = []
         self.pcm_buffer = []
+
+        self.result_threshold = 0.8
         self.voting_buffer = []
         self.voting_buffer_len = 9
+        self.result_buffer = [] 
         
         self.pipe_ble, self.pipe_process = mp.Pipe()
         self.pipe_ble_sound, self.pipe_process_sound = mp.Pipe()
@@ -189,53 +196,69 @@ class Device:
                 self.save_file_at_dir(self.path[str(sender.handle)],str(datetime.now().strftime("%Y.%m.%d"))+".txt", data)
                 
     def process_sound(self):
-        window_hop = int(self.sound_unit_samples/2)
-        save_count = 0
+        window_hop = int((self.sound_unit_samples * self.sound_clip_length_sec)/2)
 
         while True:
             sender, data = self.pipe_process_sound.recv()
 
+            wav_path = os.path.join(self.path[str(sender.handle)],"wavfiles",str(datetime.now().strftime("%Y.%m.%d")))
+            
+            os.makedirs(os.path.join(self.path[str(sender.handle)],"logs"), exist_ok=True)
+            os.makedirs(os.path.join(self.path[str(sender.handle)],"raw"), exist_ok=True)
+
+            f_logs = open(os.path.join(self.path[str(sender.handle)],"logs",str(datetime.now().strftime("%Y.%m.%d.%H"))+".txt"), 'a')
+            f_raw = open(os.path.join(self.path[str(sender.handle)],"raw",str(datetime.now().strftime("%Y.%m.%d.%H"))+".txt"), 'a')
+
             # Mic stop trigger packet: save wav and clear buffer
             if data == b'\xff\xff\xff\xff':
-                snd.save_wav(self.path[str(sender.handle)]+"/"+str(datetime.now().strftime("%Y.%m.%d.%H.%M.%S"))+".wav",
-                                self.pcm_buffer, self.sound_sample_rate)
+                os.makedirs(wav_path, exist_ok=True)
+                snd.save_wav(os.path.join(wav_path, str(datetime.now().strftime("%Y.%m.%d.%H.%M.%S"))+".wav"), self.pcm_buffer_save, self.sound_sample_rate)
                 self.pcm_buffer.clear()
+                self.pcm_buffer_save.clear()
                 self.voting_buffer.clear()
                 continue
             
             pcm = snd.adpcm_decode(data)
 
             self.pcm_buffer.extend(pcm)
+            self.pcm_buffer_save.extend(pcm)
+            
+            # Save wav files every 'sound_clip_length_sec' sec
+            if len(self.pcm_buffer_save) >= (self.sound_sample_rate * self.sound_clip_length_sec):
+                os.makedirs(wav_path, exist_ok=True)
+                snd.save_wav(os.path.join(wav_path, str(datetime.now().strftime("%Y.%m.%d.%H.%M.%S"))+".wav"), self.pcm_buffer_save, self.sound_sample_rate)
+                self.pcm_buffer_save.clear()
 
-            # if (len(self.pcm_buffer_save) >= (self.sound_unit_samples*5)):
-            #     snd.save_wav(self.path[str(sender.handle)]+"/"+str(datetime.now().strftime("%Y.%m.%d.%H.%M.%S"))+".wav",
-            #                 self.pcm_buffer_save, self.sound_sample_rate)
-            #     self.pcm_buffer_save.clear()
-
-            if (len(self.pcm_buffer) >= (self.sound_unit_samples * self.sound_length_sec)):
-                # Save wav files every 'sound_length_sec' sec
-                save_count += 1
-                if window_hop*save_count >= (self.sound_unit_samples * self.sound_length_sec):
-                    snd.save_wav(self.path[str(sender.handle)]+"/"+str(datetime.now().strftime("%Y.%m.%d.%H.%M.%S"))+".wav",
-                                self.pcm_buffer, self.sound_sample_rate)
-                    save_count = 0
-                
+            # Inference every 'window_hop' sec
+            if (len(self.pcm_buffer) >= (self.sound_unit_samples)):
                 # Preprocess and inference
-                mfcc = snd.get_mfcc(self.pcm_buffer[-self.sound_unit_samples:], sr=self.sound_sample_rate, n_mfcc=32, n_mels=64, n_fft=1000, n_hop=500)
+                mfcc = snd.get_mfcc(self.pcm_buffer[:self.sound_unit_samples], sr=self.sound_sample_rate, n_mfcc=32, n_mels=64, n_fft=1000, n_hop=500)
 
                 result = tflite.inference(self.env_interpreter, mfcc)
+
+                # Save raw inference result
+                time = str(datetime.now().strftime("%Y.%m.%d.%H.%M.%S"))
+                f_raw.write(time+','+','.join(result.astype(str))+'\n')
 
                 # Postprocessing
                 self.voting_buffer.append(result)
                 if len(self.voting_buffer) == self.voting_buffer_len:
                     # Todo: Postprocessing
+                    buf = np.array(self.voting_buffer).swapaxes(0, 1)
+                    counts = np.sum(buf > self.result_threshold, axis=1)
+                    idxs = np.where(counts != 0)[0]
+                    for idx in idxs:
+                        mean = np.mean(buf[idx][buf[idx] > self.result_threshold])
+                        f_logs.write(time+','+Device.classlist[idx]+','+str(counts[idx])+','+'%.2f'%mean+'\n')
+                        print(Device.classlist[idx], counts[idx], '%.2f'%mean)
 
-                    # print(len(self.voting_buffer))
-                    # print(np.mean(np.array(self.voting_buffer), axis=0))
-                    self.voting_buffer.pop(0)
+                    self.voting_buffer = self.voting_buffer[5:]
 
                 self.pcm_buffer = self.pcm_buffer[window_hop:]
-    
+
+            f_logs.close()
+            f_raw.close()
+
     def process_msg(self):
         while True:
             # Todo: Save log and send mqtt
