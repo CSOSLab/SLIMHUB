@@ -49,9 +49,9 @@ class Device:
 
     mqtt = None
 
-    classlist = ['speech', 'microwave', 'vacuuming', 'tv', 'eating', 'drop', 'smoke_extractor',
-                 'cooking', 'dish_clanging', 'peeing', 'chopping', 'water_flowing',
-                 'toilet_flushing', 'walking', 'brushing_teeth']
+    classlist = ['speech', 'microwave', 'vacuuming', 'tv', 'eating', 
+                'drop', 'cooking', 'dish_clanging', 'peeing', 'chopping', 
+                'water_flowing', 'toilet_flushing', 'walking']
 
     # Class functions ------------------------------------------------------------
     def __init__(self, dev):
@@ -124,6 +124,16 @@ class Device:
                 grideye_msg = grideye_msg.replace("(", "").replace(")", "")
                 grideye_msg = grideye_msg.replace(",,", ",")
                 f.write(datetime.now().strftime("%X")+","+grideye_msg+"\n")
+                found_location = dir_path[(dir_path.find("data/")+5):(dir_path.find("/ADL_DETECTOR"))]
+                mqtt_msg_dict = {}
+                mqtt_msg_dict.update(SH_ID=self.mqtt.sh_id)
+                # mqtt_msg_dict.update(location=self.deivce_location)
+                mqtt_msg_dict.update(location=found_location)
+                mqtt_msg_dict.update(time=datetime.now().strftime("%Y-%m-%d %X"))
+                mqtt_msg_dict.update(grideye_raw=grideye_msg)
+                mqtt_msg_json = json.dumps(mqtt_msg_dict)
+                print(mqtt_msg_dict)
+                self.mqtt.publish("/CSOS/ADL/ADLGRIDEYE",mqtt_msg_json)
 
                 mqtt_msg_dict = {}
             elif len(file_content) == 10:
@@ -139,6 +149,7 @@ class Device:
                 mqtt_msg_dict = {}
                 mqtt_msg_dict.update(SH_ID=self.mqtt.sh_id)
                 mqtt_msg_dict.update(location=found_location)
+                mqtt_msg_dict.update(time=datetime.now().strftime("%Y-%m-%d %X"))
                 # mqtt_msg_dict.update(aat=)
             else:
                 if os.path.getsize(os.path.join(dir_path, filename)) == 0:
@@ -250,6 +261,21 @@ class Device:
                     for idx in idxs:
                         mean = np.mean(buf[idx][buf[idx] > self.result_threshold])
                         f_logs.write(time+','+Device.classlist[idx]+','+str(counts[idx])+','+'%.2f'%mean+'\n')
+                        
+                        # Send MQTT packet
+                        mqtt_msg_dict = {}
+                        mqtt_msg_dict.update(SH_ID=self.mqtt.sh_id)
+                        mqtt_msg_dict.update(location=self.device_location)
+                        mqtt_msg_dict.update(time=datetime.now().strftime("%Y-%m-%d %X"))
+                        mqtt_msg_dict.update(inference_index=int(idx))
+                        mqtt_msg_dict.update(inference_result=Device.classlist[idx])
+                        mqtt_msg_dict.update(counts=int(counts[idx]))
+                        mqtt_msg_dict.update(mean='%.2f'%mean)
+                        mqtt_msg_json = json.dumps(mqtt_msg_dict)
+                        print(mqtt_msg_json)
+                        self.mqtt.publish("/CSOS/ADL/ADLSOUND",mqtt_msg_json)
+                        
+                        # Print inference result
                         print(Device.classlist[idx], counts[idx], '%.2f'%mean)
 
                     self.voting_buffer = self.voting_buffer[5:]
