@@ -10,6 +10,8 @@ import json
 
 from mqtt import Mqtt
 from device import Device
+import sysv_ipc
+from msgq import Msgq
 
 device_list = []
 
@@ -65,6 +67,7 @@ if __name__ == "__main__":
     print("Mqtt On")
     Device.mqtt = Mqtt("155.230.186.52", 1883, "csosMember", "csos!1234", "HMK0H001")
     Device.mqtt.connect()
+    Device.msgq = Msgq(6604, sysv_ipc.IPC_CREAT)
 
     print("Run Ble Main")
     asyncio.run(ble_main())

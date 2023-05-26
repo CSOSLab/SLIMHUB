@@ -9,6 +9,7 @@ numpy = "*"
 librosa = "*"
 bleak = "*"
 paho-mqtt = "*"
+requests = "*"
 
 [dev-packages]
 
