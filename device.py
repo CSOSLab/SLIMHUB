@@ -24,6 +24,8 @@ DEFAULT_UNIT_SAMPLES = 16000
 
 class Device:
     # Class variables ------------------------------------------------------------
+    connected_devices = {}
+
     lookup = {
         'room': {
             '0001': 'KITCHEN',
@@ -56,12 +58,14 @@ class Device:
     mqtt = None
     msgq = None
 
-    classlist = ['speech', 'microwave', 'vacuuming', 'tv', 'eating', 
-                'drop', 'cooking', 'dish_clanging', 'peeing', 'chopping', 
-                'water_flowing', 'toilet_flushing', 'walking']
+    classlist = ['speech', 'microwave', 'vacuuming', 'tv', 'eating', 'drop', 'smoke_extractor',
+                 'cooking', 'dish_clanging', 'peeing', 'chopping', 'water_flowing',
+                 'toilet_flushing', 'walking', 'brushing_teeth']
 
     # Class functions ------------------------------------------------------------
     def __init__(self, dev):
+        Device.connected_devices[dev.address] = self
+        
         self.dev = dev
 
         self.device_name = dev.name
@@ -88,20 +92,30 @@ class Device:
         self.queue_log = mp.Queue()
 
         self.ble_client = None
-        self.process = None
+        self.data_process = None
+
+        self.data_process = mp.Process(target=self._process_data)
+        self.sound_process = mp.Process(target=self._process_sound)
+        # self.msg_process = mp.Process(target=self._process_msg)
     
     # def __del__(self):
-    #     self.terminate_all()
+    #     self.remove()
 
-    def terminate_all(self):
-        self.process.terminate()
-        self.sound_process.terminate()
-        self.msg_process.terminate()
-        self.pipe_process.close()
-        self.pipe_ble.close()
-        self.pipe_process_sound.close()
-        self.pipe_ble_sound.close()
-        self.queue_log.close()
+    def remove(self):
+        Device.connected_devices.pop(self.device_address, None)
+        try:
+            self.data_process.terminate()
+            self.sound_process.terminate()
+            # self.msg_process.terminate()
+            self.pipe_process.close()
+            self.pipe_ble.close()
+            self.pipe_process_sound.close()
+            self.pipe_ble_sound.close()
+            self.queue_log.close()
+        except:
+            pass
+        finally:
+            del self
         
     # TFLite functions ------------------------------------------------------------
     def set_env_sound_interpreter(self, model_path):
@@ -111,7 +125,7 @@ class Device:
         self.speaker_interpreter = tflite.set_interpreter(model_path)
 
     # Process functions ------------------------------------------------------------
-    def save_file_at_dir(self, dir_path, filename, file_content, mode='a'):
+    def _save_file_at_dir(self, dir_path, filename, file_content, mode='a'):
         def swapEndianness(hexstring):
             ba = bytearray.fromhex(hexstring)
             ba.reverse()
@@ -235,14 +249,14 @@ class Device:
                 self.msgq.send(env_msgq_payload_temp, MSGQ_TYPE_ENV)
                 f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S")+","+file_msg+"\n")
     
-    def process_data(self):
+    def _process_data(self):
         while True:
             sender, data = self.pipe_process.recv()
 
             if len(data) < 37:
-                self.save_file_at_dir(self.path[str(sender.handle)],str(datetime.now().strftime("%Y.%m.%d"))+".txt", data)
+                self._save_file_at_dir(self.path[str(sender.handle)],str(datetime.now().strftime("%Y.%m.%d"))+".txt", data)
                 
-    def process_sound(self):
+    def _process_sound(self):
         window_hop = int((self.sound_unit_samples * self.sound_clip_length_sec)/2)
 
         while True:
@@ -345,15 +359,23 @@ class Device:
             else:
                 continue
     
-    # BLE functions ------------------------------------------------------------
-    def notify_callback(self, dev, sender, data):
-        self.pipe_ble.send([sender, data])
+    def _process_start_all(self):
+        self.data_process.start()
+        self.sound_process.start()
+        # self.msg_process.start()
     
-    def sound_notify_callback(self, dev, sender, data):
-        self.pipe_ble_sound.send([sender, data])
+    # BLE functions ------------------------------------------------------------
+    def _data_notify_callback(self, dev, sender, data):
+        if self.data_process.is_alive():
+            self.pipe_ble.send([sender, data])
+    
+    def _sound_notify_callback(self, dev, sender, data):
+        if self.sound_process.is_alive():
+            self.pipe_ble_sound.send([sender, data])
 
     async def _ble_worker(self, disconnected_callback=None):
         self.ble_client = BleakClient(self.device_address, disconnected_callback=disconnected_callback)
+
         try:
             await self.ble_client.connect()
 
@@ -374,26 +396,25 @@ class Device:
                         print(self.path[str(characteristic.handle)])
                         os.makedirs(path, exist_ok=True)
 
+                        # Check data type
                         if current_data_type == "SOUND":
-                            await self.ble_client.start_notify(characteristic.uuid, partial(self.sound_notify_callback, self.dev))
+                            await self.ble_client.start_notify(characteristic.uuid, partial(self._sound_notify_callback, self.dev))
                         else:
-                            await self.ble_client.start_notify(characteristic.uuid, partial(self.notify_callback, self.dev))
+                            await self.ble_client.start_notify(characteristic.uuid, partial(self._data_notify_callback, self.dev))
 
                     except Exception as e:
-                        # print(e)
+                        print(e)
                         pass          
 
         except Exception as e:
-            # print(e)
+            print(e)
             pass
 
         finally:
-            self.process = mp.Process(target=self.process_data)
-            self.process.start()
-            self.sound_process = mp.Process(target=self.process_sound)
-            self.sound_process.start()
-            self.msg_process = mp.Process(target=self.process_msg)
-            self.msg_process.start()
+            if self.ble_client.is_connected:
+                self._process_start_all()
+            else:
+                self.remove()
     
     async def ble_client_start(self, disconnected_callback=None):
         await self._ble_worker(disconnected_callback)

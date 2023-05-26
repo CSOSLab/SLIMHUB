@@ -13,8 +13,6 @@ from device import Device
 import sysv_ipc
 from msgq import Msgq
 
-device_list = []
-
 env_sound_model_path = 'models/sample_sound_model.tflite'
 
 async def scan():
@@ -24,44 +22,36 @@ async def scan():
     # print(devices)
     for dev in devices:
         if dev.name.split("_")[0] == 'ADL':
-            target_devices.append(dev)
+            # if dev.address=="DA:A1:DE:9D:DB:B1":
+                target_devices.append(dev)
     return target_devices
 
-def search_device(address):
-    for device in device_list:
-        if device.dev.address == address:
-            return device_list.index(device)
-    return None
-
 def disconnected_callback(client):
-    print(f'Device {client.address} disconnected, reason')
+    print(f'Device {client.address} disconnected')
     
-    index = search_device(client.address)
-    if index is not None:
-        device = device_list.pop(index)
-        device.terminate_all()
-        del device
+    device = Device.connected_devices.get(client.address, None)
+    if device is not None:
+        device.remove()
 
 async def ble_main():
     while True:
         try:
             target_devices = await scan()
             for dev in target_devices:
-                index = search_device(dev.address)
-                if index is None:
-                # if str(dev) not in task_list:
-                    print(dev, "find")
+                if Device.connected_devices.get(dev.address, None) is None:
+                    print(dev, "found")
 
                     device = Device(dev)
+
                     device.set_env_sound_interpreter(env_sound_model_path)
 
                     await device.ble_client_start(disconnected_callback)
-                    device_list.append(device)
+
         except Exception as e:
             print(e)
             pass
 
-        # await asyncio.sleep(10.0)
+        await asyncio.sleep(10.0)
 
 if __name__ == "__main__":
     print("Mqtt On")

@@ -10,17 +10,19 @@ def set_interpreter(model_path):
     input_details = tflite_interpreter.get_input_details()[0]
     output_details = tflite_interpreter.get_output_details()[0]
 
-    print("== Input details ==")
-    print("name:", input_details['name'])
-    print("shape:", input_details['shape'])
-    print("type:", input_details['dtype'])
-    print("index:", input_details['index'])
+    print("TFLite tensor allocated")
 
-    print("\n== Output details ==")
-    print("name:", output_details['name'])
-    print("shape:", output_details['shape'])
-    print("type:", output_details['dtype'])
-    print("index:", input_details['index'])
+    # print("== Input details ==")
+    # print("name:", input_details['name'])
+    # print("shape:", input_details['shape'])
+    # print("type:", input_details['dtype'])
+    # print("index:", input_details['index'])
+
+    # print("\n== Output details ==")
+    # print("name:", output_details['name'])
+    # print("shape:", output_details['shape'])
+    # print("type:", output_details['dtype'])
+    # print("index:", input_details['index'])
 
     return tflite_interpreter
 
