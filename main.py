@@ -29,7 +29,7 @@ async def scan():
 def disconnected_callback(client):
     print(f'Device {client.address} disconnected')
     
-    device = Device.connected_devices.get(client.address, None)
+    device = Device.manager.connected_devices.get(client.address, None)
     if device is not None:
         device.remove()
 
@@ -38,12 +38,10 @@ async def ble_main():
         try:
             target_devices = await scan()
             for dev in target_devices:
-                if Device.connected_devices.get(dev.address, None) is None:
+                if Device.manager.connected_devices.get(dev.address, None) is None:
                     print(dev, "found")
 
                     device = Device(dev)
-
-                    device.set_env_sound_interpreter(env_sound_model_path)
 
                     await device.ble_client_start(disconnected_callback)
 
@@ -55,9 +53,13 @@ async def ble_main():
 
 if __name__ == "__main__":
     print("Mqtt On")
-    Device.mqtt = Mqtt("155.230.186.52", 1883, "csosMember", "csos!1234", "HMK0H001")
-    Device.mqtt.connect()
-    Device.msgq = Msgq(6604, sysv_ipc.IPC_CREAT)
+    Device.manager.mqtt = Mqtt("155.230.186.52", 1883, "csosMember", "csos!1234", "HMK0H001")
+    Device.manager.mqtt.connect()
+    Device.manager.msgq = Msgq(6604, sysv_ipc.IPC_CREAT)
+
+    Device.manager.set_env_sound_interpreter(env_sound_model_path)
+
+    Device.manager.process_start_all()
 
     print("Run Ble Main")
     asyncio.run(ble_main())
