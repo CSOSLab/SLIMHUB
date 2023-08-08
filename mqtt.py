@@ -1,12 +1,12 @@
 import paho.mqtt.client as mqtt
 
 class Mqtt():
-    def __init__(self, ip, port, id, passwd, sh_id):
+    def __init__(self, ip, port, id, passwd, sh_id, client_id=None):
         self.ip = ip
         self.port = port
         self.id = id
         self.passwd = passwd
-        self.client = mqtt.Client("Foot_Pressure")
+        self.client = mqtt.Client(client_id)
 
         self.sh_id = sh_id
 

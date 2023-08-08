@@ -30,7 +30,7 @@ class DeviceManager:
     def __init__(self):    
         self.connected_devices = {}
 
-        self.mqtt = mqtt.MQTT()
+        self.mqtt = None
         self.msgq = None
 
         self.sound_sample_rate = DEFAULT_SAMPLE_RATE
@@ -45,24 +45,18 @@ class DeviceManager:
 
         self.queue_data = mp.Queue()
         self.queue_sound = mp.Queue()
+    
+    def add_device(self, device):
+        device.queue_data = self.queue_data
+        device.queue_sound = self.queue_sound
+        
+        self.connected_devices[device.device_address] = device
+    
+    def remove_device(self, device):
+        dev = self.connected_devices.pop(device.address)
+        del dev
 
-    def remove(self):
-        Device.connected_devices.pop(self.device_address, None)
-        try:
-            self.data_process.terminate()
-            self.sound_process.terminate()
-            # self.msg_process.terminate()
-            # self.pipe_process.close()
-            # self.pipe_ble.close()
-            # self.pipe_process_sound.close()
-            # self.pipe_ble_sound.close()
-            # self.queue_log.close()
-        except:
-            pass
-        finally:
-            del self
-
-        # TFLite functions ------------------------------------------------------------
+    # TFLite functions ------------------------------------------------------------
     def set_env_sound_interpreter(self, model_path):
         self.env_interpreter = tflite.set_interpreter(model_path)
 
@@ -80,6 +74,7 @@ class DeviceManager:
         #     f_data_i=int(f_data)
         #     f_data_d=int((f_data-int(f_data))*100000)
         #     return str("%04x"%f_data_i), str("%04x"%f_data_d)
+
         dir_path = device.path[str(handle)]
         current_time = datetime.now()
         filename = current_time.strftime("%Y-%m-%d")+".txt"
@@ -291,29 +286,15 @@ class DeviceManager:
 
             f_logs.close()
             f_raw.close()
-
-    def process_msg(self):
-        while True:
-            # Todo: Save log and send mqtt
-            # Add timestamp here: To arrange different types of messages
-
-            type, msg = self.queue_log.get()
-
-            if type == 'SOUND':
-                continue
-            elif type == 'ENV':
-                continue
-            elif type == 'GRIDEYE':
-                continue
-            elif type == 'AAT':
-                continue
-            else:
-                continue
     
     def process_start_all(self):
         self.data_process.start()
         self.sound_process.start()
-        # self.msg_process.start()
+
+    def process_stop_all(self):
+        self.data_process.terminate()
+        self.sound_process.terminate()
+
 
 class Device:
     # Class variables ------------------------------------------------------------
@@ -346,12 +327,8 @@ class Device:
         }
     }
 
-    manager = DeviceManager()
-
     # Class functions ------------------------------------------------------------
     def __init__(self, dev):
-        Device.manager.connected_devices[dev.address] = self
-        
         self.dev = dev
 
         self.device_name = dev.name
@@ -368,33 +345,20 @@ class Device:
         self.result_buffer = [] 
 
         self.ble_client = None
+
+        self.queue_data = None
+        self.queue_sound = None
     
     # def __del__(self):
     #     self.remove()
-
-    def remove(self):
-        Device.manager.connected_devices.pop(self.device_address, None)
-        # try:
-        #     self.data_process.terminate()
-        #     self.sound_process.terminate()
-        #     # self.msg_process.terminate()
-        #     self.pipe_process.close()
-        #     self.pipe_ble.close()
-        #     self.pipe_process_sound.close()
-        #     self.pipe_ble_sound.close()
-        #     self.queue_log.close()
-        # except:
-        #     pass
-        # finally:
-        #     del self
         
     # BLE functions ------------------------------------------------------------
     def _data_notify_callback(self, dev, sender, data):
-        if self.data_process.is_alive():
+        if Device.queue_data is not None:
             self.manager.queue_data.put([dev.address, sender.handle, data])
     
     def _sound_notify_callback(self, dev, sender, data):
-        if self.sound_process.is_alive():
+        if Device.queue_sound is not None:
             self.manager.queue_sound.put([dev.address, sender.handle, data])
 
     async def _ble_worker(self, disconnected_callback=None):
@@ -435,8 +399,7 @@ class Device:
             pass
 
         finally:
-            if not self.ble_client.is_connected:
-                self.remove()
+            return self.ble_client.is_connected
     
     async def ble_client_start(self, disconnected_callback=None):
-        await self._ble_worker(disconnected_callback)
+        return await self._ble_worker(disconnected_callback)
