@@ -21,7 +21,7 @@ async def scan():
     # print(devices)
     # print(devices)
     for dev in devices:
-        if dev.name.split("_")[0] == 'ADL':
+        if dev.name.split("_")[0] == 'ADL-TEST':
             # if dev.address=="DA:A1:DE:9D:DB:B1":
                 target_devices.append(dev)
     return target_devices

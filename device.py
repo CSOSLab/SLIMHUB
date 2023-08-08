@@ -81,6 +81,7 @@ class Device:
 
         self.pcm_buffer_save = []
         self.pcm_buffer = []
+        self.mfcc_buffer = []
 
         self.result_threshold = 0.8
         self.voting_buffer = []
@@ -97,6 +98,8 @@ class Device:
         self.data_process = mp.Process(target=self._process_data)
         self.sound_process = mp.Process(target=self._process_sound)
         # self.msg_process = mp.Process(target=self._process_msg)
+
+        self.data_collection_mode = False
     
     # def __del__(self):
     #     self.remove()
@@ -279,65 +282,71 @@ class Device:
                 self.voting_buffer.clear()
                 continue
             
-            pcm = snd.adpcm_decode(data)
+            if self.data_collection_mode:
+                pcm = snd.adpcm_decode(data)
 
-            self.pcm_buffer.extend(pcm)
-            self.pcm_buffer_save.extend(pcm)
-            
-            # Save wav files every 'sound_clip_length_sec' sec
-            if len(self.pcm_buffer_save) >= (self.sound_sample_rate * self.sound_clip_length_sec):
-                os.makedirs(wav_path, exist_ok=True)
-                snd.save_wav(os.path.join(wav_path, str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))+".wav"), self.pcm_buffer_save, self.sound_sample_rate)
-                self.pcm_buffer_save.clear()
+                self.pcm_buffer.extend(pcm)
+                self.pcm_buffer_save.extend(pcm)
+                
+                # Save wav files every 'sound_clip_length_sec' sec
+                if len(self.pcm_buffer_save) >= (self.sound_sample_rate * self.sound_clip_length_sec):
+                    os.makedirs(wav_path, exist_ok=True)
+                    snd.save_wav(os.path.join(wav_path, str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))+".wav"), self.pcm_buffer_save, self.sound_sample_rate)
+                    self.pcm_buffer_save.clear()
 
-            # Inference every 'window_hop' sec
-            if (len(self.pcm_buffer) >= (self.sound_unit_samples)):
-                # Preprocess and inference
-                mfcc = snd.get_mfcc(self.pcm_buffer[:self.sound_unit_samples], sr=self.sound_sample_rate, n_mfcc=32, n_mels=64, n_fft=1000, n_hop=500)
+                # Inference every 'window_hop' sec
+                if (len(self.pcm_buffer) >= (self.sound_unit_samples)):
+                    # Preprocess and inference
+                    mfcc = snd.get_mfcc(self.pcm_buffer[:self.sound_unit_samples], sr=self.sound_sample_rate, n_mfcc=32, n_mels=64, n_fft=1000, n_hop=500)
 
-                result = tflite.inference(self.env_interpreter, mfcc)
+                    result = tflite.inference(self.env_interpreter, mfcc)
 
-                # Save raw inference result
-                time = str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                f_raw.write(time+','+','.join(result.astype(str))+'\n')
+                    # Save raw inference result
+                    time = str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                    f_raw.write(time+','+','.join(result.astype(str))+'\n')
 
-                # Postprocessing
-                self.voting_buffer.append(result)
-                if len(self.voting_buffer) == self.voting_buffer_len:
-                    # Todo: Postprocessing
-                    buf = np.array(self.voting_buffer).swapaxes(0, 1)
-                    counts = np.sum(buf > self.result_threshold, axis=1)
-                    idxs = np.where(counts != 0)[0]
-                    for idx in idxs:
-                        mean = np.mean(buf[idx][buf[idx] > self.result_threshold])
-                        f_logs.write(time+','+Device.classlist[idx]+','+str(counts[idx])+','+'%.2f'%mean+'\n')
-                        
-                        # Send MQTT packet
-                        mqtt_msg_dict = {}
-                        mqtt_msg_dict.update(SH_ID=self.mqtt.sh_id)
-                        mqtt_msg_dict.update(location=self.device_location)
-                        mqtt_msg_dict.update(time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                        mqtt_msg_dict.update(inference_index=int(idx))
-                        mqtt_msg_dict.update(inference_result=Device.classlist[idx])
-                        mqtt_msg_dict.update(counts=int(counts[idx]))
-                        mqtt_msg_dict.update(mean='%.2f'%mean)
+                    # Postprocessing
+                    self.voting_buffer.append(result)
+                    if len(self.voting_buffer) == self.voting_buffer_len:
+                        # Todo: Postprocessing
+                        buf = np.array(self.voting_buffer).swapaxes(0, 1)
+                        counts = np.sum(buf > self.result_threshold, axis=1)
+                        idxs = np.where(counts != 0)[0]
+                        for idx in idxs:
+                            mean = np.mean(buf[idx][buf[idx] > self.result_threshold])
+                            f_logs.write(time+','+Device.classlist[idx]+','+str(counts[idx])+','+'%.2f'%mean+'\n')
+                            
+                            # Send MQTT packet
+                            mqtt_msg_dict = {}
+                            mqtt_msg_dict.update(SH_ID=self.mqtt.sh_id)
+                            mqtt_msg_dict.update(location=self.device_location)
+                            mqtt_msg_dict.update(time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                            mqtt_msg_dict.update(inference_index=int(idx))
+                            mqtt_msg_dict.update(inference_result=Device.classlist[idx])
+                            mqtt_msg_dict.update(counts=int(counts[idx]))
+                            mqtt_msg_dict.update(mean='%.2f'%mean)
 
-                        mqtt_msg_json = json.dumps(mqtt_msg_dict)
-                        self.mqtt.publish("/CSOS/ADL/ADL_SOUND",mqtt_msg_json)
-                        
-                        # packing data into string format
-                        msgq_payload_sound_str = ""
-                        # msgq_payload_sound_str = msgq_payload_sound_str+str(idx)+str(Device.classlist[idx])+str(counts[idx])+str('%.2f'%mean)
-                        msgq_payload_sound_str = msgq_payload_sound_str+"SJK,"+str(self.device_location)+","+str(Device.classlist[idx])+","+str(idx)+","+str('%.2f'%mean)+",,,,,,,"+"\n"
-                        self.msgq.send(msgq_payload_sound_str, MSGQ_TYPE_SOUND)
-                        
-                        # Print inference result
-                        print(Device.classlist[idx], counts[idx], '%.2f'%mean)
+                            mqtt_msg_json = json.dumps(mqtt_msg_dict)
+                            self.mqtt.publish("/CSOS/ADL/ADL_SOUND",mqtt_msg_json)
+                            
+                            # packing data into string format
+                            msgq_payload_sound_str = ""
+                            # msgq_payload_sound_str = msgq_payload_sound_str+str(idx)+str(Device.classlist[idx])+str(counts[idx])+str('%.2f'%mean)
+                            msgq_payload_sound_str = msgq_payload_sound_str+"SJK,"+str(self.device_location)+","+str(Device.classlist[idx])+","+str(idx)+","+str('%.2f'%mean)+",,,,,,,"+"\n"
+                            self.msgq.send(msgq_payload_sound_str, MSGQ_TYPE_SOUND)
+                            
+                            # Print inference result
+                            print(Device.classlist[idx], counts[idx], '%.2f'%mean)
 
-                    self.voting_buffer = self.voting_buffer[5:]
+                        self.voting_buffer = self.voting_buffer[5:]
 
-                self.pcm_buffer = self.pcm_buffer[window_hop:]
-
+                    self.pcm_buffer = self.pcm_buffer[window_hop:]
+            else:
+                self.mfcc_buffer.append(struct.unpack('<f', data))
+                if len(self.mfcc_buffer == 32):
+                    print(mfcc_buffer)
+                    self.mfcc_buffer.clear()
+                
             f_logs.close()
             f_raw.close()
 
