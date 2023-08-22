@@ -342,11 +342,52 @@ class Device:
 
                     self.pcm_buffer = self.pcm_buffer[window_hop:]
             else:
-                self.mfcc_buffer.append(struct.unpack('<f', data))
-                if len(self.mfcc_buffer == 32):
-                    print(mfcc_buffer)
-                    self.mfcc_buffer.clear()
+                self.mfcc_buffer.append([struct.unpack('<f', data[i:i+4])[0] for i in range(0, len(data), 4)])
                 
+                if len(self.mfcc_buffer) == 32:
+                    result = tflite.inference(self.env_interpreter, np.array(self.mfcc_buffer, dtype='float32').T[..., np.newaxis])
+
+                    # Save raw inference result
+                    time = str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                    f_raw.write(time+','+','.join(result.astype(str))+'\n')
+
+                    # Postprocessing
+                    self.voting_buffer.append(result)
+                    if len(self.voting_buffer) == self.voting_buffer_len:
+                        # Todo: Postprocessing
+                        buf = np.array(self.voting_buffer).swapaxes(0, 1)
+                        counts = np.sum(buf > self.result_threshold, axis=1)
+                        idxs = np.where(counts != 0)[0]
+                        for idx in idxs:
+                            mean = np.mean(buf[idx][buf[idx] > self.result_threshold])
+                            f_logs.write(time+','+Device.classlist[idx]+','+str(counts[idx])+','+'%.2f'%mean+'\n')
+                            
+                            # Send MQTT packet
+                            mqtt_msg_dict = {}
+                            mqtt_msg_dict.update(SH_ID=self.mqtt.sh_id)
+                            mqtt_msg_dict.update(location=self.device_location)
+                            mqtt_msg_dict.update(time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                            mqtt_msg_dict.update(inference_index=int(idx))
+                            mqtt_msg_dict.update(inference_result=Device.classlist[idx])
+                            mqtt_msg_dict.update(counts=int(counts[idx]))
+                            mqtt_msg_dict.update(mean='%.2f'%mean)
+
+                            mqtt_msg_json = json.dumps(mqtt_msg_dict)
+                            self.mqtt.publish("/CSOS/ADL/ADL_SOUND",mqtt_msg_json)
+                            
+                            # packing data into string format
+                            msgq_payload_sound_str = ""
+                            # msgq_payload_sound_str = msgq_payload_sound_str+str(idx)+str(Device.classlist[idx])+str(counts[idx])+str('%.2f'%mean)
+                            msgq_payload_sound_str = msgq_payload_sound_str+"SJK,"+str(self.device_location)+","+str(Device.classlist[idx])+","+str(idx)+","+str('%.2f'%mean)+",,,,,,,"+"\n"
+                            self.msgq.send(msgq_payload_sound_str, MSGQ_TYPE_SOUND)
+                            
+                            # Print inference result
+                            print(Device.classlist[idx], counts[idx], '%.2f'%mean)
+
+                        self.voting_buffer = self.voting_buffer[5:]
+                        
+                    self.mfcc_buffer = self.mfcc_buffer[16:]
+            
             f_logs.close()
             f_raw.close()
 
