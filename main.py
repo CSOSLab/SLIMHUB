@@ -13,7 +13,7 @@ from device import Device
 import sysv_ipc
 from msgq import Msgq
 
-env_sound_model_path = 'models/sample_sound_model.tflite'
+env_sound_model_path = 'models/cnn_12_f32.tflite'
 
 async def scan():
     target_devices = []

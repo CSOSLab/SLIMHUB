@@ -260,23 +260,23 @@ class Device:
                 self._save_file_at_dir(self.path[str(sender.handle)],str(datetime.now().strftime("%Y.%m.%d"))+".txt", data)
                 
     def _process_sound(self):
-        window_hop = int((self.sound_unit_samples * self.sound_clip_length_sec)/2)
+        window_hop = int((self.sound_unit_samples * self.sound_clip_length_sec)/4)
 
         while True:
-            sender, data = self.pipe_process_sound.recv()
+            sender, received_time, received_time_t, data = self.pipe_process_sound.recv()
 
-            wav_path = os.path.join(self.path[str(sender.handle)],"wavfiles",str(datetime.now().strftime("%Y.%m.%d")))
+            wav_path = os.path.join(self.path[str(sender.handle)],"wavfiles",str(received_time.strftime("%Y.%m.%d")))
             
             os.makedirs(os.path.join(self.path[str(sender.handle)],"logs"), exist_ok=True)
             os.makedirs(os.path.join(self.path[str(sender.handle)],"raw"), exist_ok=True)
 
-            f_logs = open(os.path.join(self.path[str(sender.handle)],"logs",str(datetime.now().strftime("%Y.%m.%d.%H"))+".txt"), 'a')
-            f_raw = open(os.path.join(self.path[str(sender.handle)],"raw",str(datetime.now().strftime("%Y.%m.%d.%H"))+".txt"), 'a')
+            f_logs = open(os.path.join(self.path[str(sender.handle)],"logs",str(received_time.strftime("%Y.%m.%d.%H"))+".txt"), 'a')
+            f_raw = open(os.path.join(self.path[str(sender.handle)],"raw",str(received_time.strftime("%Y.%m.%d.%H"))+".txt"), 'a')
 
             # Mic stop trigger packet: save wav and clear buffer
             if data == b'\xff\xff\xff\xff':
                 os.makedirs(wav_path, exist_ok=True)
-                snd.save_wav(os.path.join(wav_path, str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))+".wav"), self.pcm_buffer_save, self.sound_sample_rate)
+                snd.save_wav(os.path.join(wav_path, str(received_time.strftime("%Y-%m-%d %H:%M:%S"))+".wav"), self.pcm_buffer_save, self.sound_sample_rate)
                 self.pcm_buffer.clear()
                 self.pcm_buffer_save.clear()
                 self.voting_buffer.clear()
@@ -291,7 +291,7 @@ class Device:
                 # Save wav files every 'sound_clip_length_sec' sec
                 if len(self.pcm_buffer_save) >= (self.sound_sample_rate * self.sound_clip_length_sec):
                     os.makedirs(wav_path, exist_ok=True)
-                    snd.save_wav(os.path.join(wav_path, str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))+".wav"), self.pcm_buffer_save, self.sound_sample_rate)
+                    snd.save_wav(os.path.join(wav_path, str(received_time.strftime("%Y-%m-%d %H:%M:%S"))+".wav"), self.pcm_buffer_save, self.sound_sample_rate)
                     self.pcm_buffer_save.clear()
 
                 # Inference every 'window_hop' sec
@@ -302,8 +302,8 @@ class Device:
                     result = tflite.inference(self.env_interpreter, mfcc)
 
                     # Save raw inference result
-                    time = str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                    f_raw.write(time+','+','.join(result.astype(str))+'\n')
+                    current_time = str(received_time.strftime("%Y-%m-%d %H:%M:%S"))
+                    f_raw.write(current_time+','+','.join(result.astype(str))+'\n')
 
                     # Postprocessing
                     self.voting_buffer.append(result)
@@ -314,42 +314,45 @@ class Device:
                         idxs = np.where(counts != 0)[0]
                         for idx in idxs:
                             mean = np.mean(buf[idx][buf[idx] > self.result_threshold])
-                            f_logs.write(time+','+Device.classlist[idx]+','+str(counts[idx])+','+'%.2f'%mean+'\n')
+                            # f_logs.write(time+','+Device.classlist[idx]+','+str(counts[idx])+','+'%.2f'%mean+'\n')
                             
-                            # Send MQTT packet
-                            mqtt_msg_dict = {}
-                            mqtt_msg_dict.update(SH_ID=self.mqtt.sh_id)
-                            mqtt_msg_dict.update(location=self.device_location)
-                            mqtt_msg_dict.update(time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                            mqtt_msg_dict.update(inference_index=int(idx))
-                            mqtt_msg_dict.update(inference_result=Device.classlist[idx])
-                            mqtt_msg_dict.update(counts=int(counts[idx]))
-                            mqtt_msg_dict.update(mean='%.2f'%mean)
+                            # # Send MQTT packet
+                            # mqtt_msg_dict = {}
+                            # mqtt_msg_dict.update(SH_ID=self.mqtt.sh_id)
+                            # mqtt_msg_dict.update(location=self.device_location)
+                            # mqtt_msg_dict.update(time=received_time.strftime("%Y-%m-%d %H:%M:%S"))
+                            # mqtt_msg_dict.update(inference_index=int(idx))
+                            # mqtt_msg_dict.update(inference_result=Device.classlist[idx])
+                            # mqtt_msg_dict.update(counts=int(counts[idx]))
+                            # mqtt_msg_dict.update(mean='%.2f'%mean)
 
-                            mqtt_msg_json = json.dumps(mqtt_msg_dict)
-                            self.mqtt.publish("/CSOS/ADL/ADL_SOUND",mqtt_msg_json)
+                            # mqtt_msg_json = json.dumps(mqtt_msg_dict)
+                            # self.mqtt.publish("/CSOS/ADL/ADL_SOUND",mqtt_msg_json)
                             
-                            # packing data into string format
-                            msgq_payload_sound_str = ""
-                            # msgq_payload_sound_str = msgq_payload_sound_str+str(idx)+str(Device.classlist[idx])+str(counts[idx])+str('%.2f'%mean)
-                            msgq_payload_sound_str = msgq_payload_sound_str+"SJK,"+str(self.device_location)+","+str(Device.classlist[idx])+","+str(idx)+","+str('%.2f'%mean)+",,,,,,,"+"\n"
-                            self.msgq.send(msgq_payload_sound_str, MSGQ_TYPE_SOUND)
+                            # # packing data into string format
+                            # msgq_payload_sound_str = ""
+                            # # msgq_payload_sound_str = msgq_payload_sound_str+str(idx)+str(Device.classlist[idx])+str(counts[idx])+str('%.2f'%mean)
+                            # msgq_payload_sound_str = msgq_payload_sound_str+"SJK,"+str(self.device_location)+","+str(Device.classlist[idx])+","+str(idx)+","+str('%.2f'%mean)+",,,,,,,"+"\n"
+                            # self.msgq.send(msgq_payload_sound_str, MSGQ_TYPE_SOUND)
                             
                             # Print inference result
-                            print(Device.classlist[idx], counts[idx], '%.2f'%mean)
+                            # print(Device.classlist[idx], counts[idx], '%.2f'%mean)
 
-                        self.voting_buffer = self.voting_buffer[5:]
+                        self.voting_buffer = self.voting_buffer[1:]
 
                     self.pcm_buffer = self.pcm_buffer[window_hop:]
             else:
-                self.mfcc_buffer.append([struct.unpack('<f', data[i:i+4])[0] for i in range(0, len(data), 4)])
+                try:
+                    self.mfcc_buffer.append([struct.unpack('<f', data[i:i+4])[0] for i in range(0, len(data), 4)])
+                except:
+                    continue
                 
                 if len(self.mfcc_buffer) == 32:
                     result = tflite.inference(self.env_interpreter, np.array(self.mfcc_buffer, dtype='float32').T[..., np.newaxis])
 
                     # Save raw inference result
-                    time = str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                    f_raw.write(time+','+','.join(result.astype(str))+'\n')
+                    current_time = str(received_time.strftime("%Y-%m-%d %H:%M:%S"))
+                    # f_raw.write(time+','+','.join(result.astype(str))+'\n')
 
                     # Postprocessing
                     self.voting_buffer.append(result)
@@ -360,33 +363,35 @@ class Device:
                         idxs = np.where(counts != 0)[0]
                         for idx in idxs:
                             mean = np.mean(buf[idx][buf[idx] > self.result_threshold])
-                            f_logs.write(time+','+Device.classlist[idx]+','+str(counts[idx])+','+'%.2f'%mean+'\n')
+                            # # f_logs.write(time+','+Device.classlist[idx]+','+str(counts[idx])+','+'%.2f'%mean+'\n')
                             
-                            # Send MQTT packet
-                            mqtt_msg_dict = {}
-                            mqtt_msg_dict.update(SH_ID=self.mqtt.sh_id)
-                            mqtt_msg_dict.update(location=self.device_location)
-                            mqtt_msg_dict.update(time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                            mqtt_msg_dict.update(inference_index=int(idx))
-                            mqtt_msg_dict.update(inference_result=Device.classlist[idx])
-                            mqtt_msg_dict.update(counts=int(counts[idx]))
-                            mqtt_msg_dict.update(mean='%.2f'%mean)
+                            # # Send MQTT packet
+                            # mqtt_msg_dict = {}
+                            # mqtt_msg_dict.update(SH_ID=self.mqtt.sh_id)
+                            # mqtt_msg_dict.update(location=self.device_location)
+                            # mqtt_msg_dict.update(time=received_time.strftime("%Y-%m-%d %H:%M:%S"))
+                            # mqtt_msg_dict.update(inference_index=int(idx))
+                            # mqtt_msg_dict.update(inference_result=Device.classlist[idx])
+                            # mqtt_msg_dict.update(counts=int(counts[idx]))
+                            # mqtt_msg_dict.update(mean='%.2f'%mean)
 
-                            mqtt_msg_json = json.dumps(mqtt_msg_dict)
-                            self.mqtt.publish("/CSOS/ADL/ADL_SOUND",mqtt_msg_json)
+                            # mqtt_msg_json = json.dumps(mqtt_msg_dict)
+                            # self.mqtt.publish("/CSOS/ADL/ADL_SOUND",mqtt_msg_json)
                             
-                            # packing data into string format
-                            msgq_payload_sound_str = ""
-                            # msgq_payload_sound_str = msgq_payload_sound_str+str(idx)+str(Device.classlist[idx])+str(counts[idx])+str('%.2f'%mean)
-                            msgq_payload_sound_str = msgq_payload_sound_str+"SJK,"+str(self.device_location)+","+str(Device.classlist[idx])+","+str(idx)+","+str('%.2f'%mean)+",,,,,,,"+"\n"
-                            self.msgq.send(msgq_payload_sound_str, MSGQ_TYPE_SOUND)
+                            # # packing data into string format
+                            # msgq_payload_sound_str = ""
+                            # # msgq_payload_sound_str = msgq_payload_sound_str+str(idx)+str(Device.classlist[idx])+str(counts[idx])+str('%.2f'%mean)
+                            # msgq_payload_sound_str = msgq_payload_sound_str+"SJK,"+str(self.device_location)+","+str(Device.classlist[idx])+","+str(idx)+","+str('%.2f'%mean)+",,,,,,,"+"\n"
+                            # self.msgq.send(msgq_payload_sound_str, MSGQ_TYPE_SOUND)
                             
                             # Print inference result
-                            print(Device.classlist[idx], counts[idx], '%.2f'%mean)
-
-                        self.voting_buffer = self.voting_buffer[5:]
+                            # print(self.device_address, ':', Device.classlist[idx], counts[idx], '%.2f'%mean)
+                        processed_time = time.time()
+                        print(self.device_address, ':', (processed_time-received_time_t)*1000,'ms')
                         
-                    self.mfcc_buffer = self.mfcc_buffer[16:]
+                        self.voting_buffer = self.voting_buffer[1:]
+                        
+                    self.mfcc_buffer = self.mfcc_buffer[8:]
             
             f_logs.close()
             f_raw.close()
@@ -420,8 +425,10 @@ class Device:
             self.pipe_ble.send([sender, data])
     
     def _sound_notify_callback(self, dev, sender, data):
+        received_time = datetime.now()
+        received_time_t = time.time()
         if self.sound_process.is_alive():
-            self.pipe_ble_sound.send([sender, data])
+            self.pipe_ble_sound.send([sender, received_time, received_time_t, data])
 
     async def _ble_worker(self, disconnected_callback=None):
         self.ble_client = BleakClient(self.device_address, disconnected_callback=disconnected_callback)
