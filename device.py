@@ -15,6 +15,8 @@ import sound_process as snd
 import tensorflow_lite as tflite
 import sysv_ipc
 
+from dean_uuid import *
+
 MSGQ_TYPE_DEVICE = 1
 MSGQ_TYPE_ENV = 2
 MSGQ_TYPE_SOUND = 3
@@ -69,6 +71,7 @@ class Device:
         self.dev = dev
 
         self.device_name = dev.name
+        self.device_nickname = ''
         self.device_address = dev.address
         self.device_type = '' 
         self.device_location = ''
@@ -436,32 +439,51 @@ class Device:
         try:
             await self.ble_client.connect()
 
+            while True:
+                try:
+                    self.device_nickname = await self.ble_client.read_gatt_char(BLE_UUID_DCS_DEVICE_NAME_CHAR)
+                    self.device_type = await self.ble_client.read_gatt_char(BLE_UUID_DCS_DEVICE_TYPE_CHAR)
+                    self.device_location = await self.ble_client.read_gatt_char(BLE_UUID_DCS_LOCATION_CHAR)
+
+                    self.device_nickname = str(self.device_nickname, 'utf-8')
+                    self.device_type = str(self.device_type, 'utf-8')
+                    self.device_location = str(self.device_location, 'utf-8')
+
+                    print(self.device_nickname, self.device_type, self.device_location)
+                    break
+                except:
+                    pass  
+
             for service in self.ble_client.services:
-                for characteristic in service.characteristics:
-                    try:
-                        path = os.getcwd()+"/data"
+                if service.uuid == BLE_UUID_DCS_SERVICE:
+                    continue
 
-                        uuid_split = characteristic.uuid.split("-")
+                else:                  
+                    for characteristic in service.characteristics:
+                        try:
+                            path = os.getcwd()+"/data"
 
-                        self.device_location = Device.lookup['room'].get(uuid_split[1])
-                        self.device_type = Device.lookup['device_type'].get(uuid_split[2])
-                        current_data_type = Device.lookup['data_type'].get(uuid_split[3])
+                            uuid_split = characteristic.uuid.split("-")
 
-                        path = os.path.join(path, self.device_location, self.device_type, self.device_address, current_data_type)
-                        
-                        self.path[str(characteristic.handle)] = path
-                        print(self.path[str(characteristic.handle)])
-                        os.makedirs(path, exist_ok=True)
+                            self.device_location = Device.lookup['room'].get(uuid_split[1])
+                            self.device_type = Device.lookup['device_type'].get(uuid_split[2])
+                            current_data_type = Device.lookup['data_type'].get(uuid_split[3])
 
-                        # Check data type
-                        if current_data_type == "SOUND":
-                            await self.ble_client.start_notify(characteristic.uuid, partial(self._sound_notify_callback, self.dev))
-                        else:
-                            await self.ble_client.start_notify(characteristic.uuid, partial(self._data_notify_callback, self.dev))
+                            path = os.path.join(path, self.device_location, self.device_type, self.device_address, current_data_type)
+                            
+                            self.path[str(characteristic.handle)] = path
+                            print(self.path[str(characteristic.handle)])
+                            os.makedirs(path, exist_ok=True)
 
-                    except Exception as e:
-                        print(e)
-                        pass          
+                            # Check data type
+                            if current_data_type == "SOUND":
+                                await self.ble_client.start_notify(characteristic.uuid, partial(self._sound_notify_callback, self.dev))
+                            else:
+                                await self.ble_client.start_notify(characteristic.uuid, partial(self._data_notify_callback, self.dev))
+
+                        except Exception as e:
+                            print(e)
+                            pass          
 
         except Exception as e:
             print(e)
