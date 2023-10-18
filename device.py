@@ -439,15 +439,13 @@ class Device:
         try:
             await self.ble_client.connect()
 
-            while True:
+            retry_count = 5
+            for i in range(retry_count):
                 try:
-                    self.device_nickname = await self.ble_client.read_gatt_char(BLE_UUID_DCS_DEVICE_NAME_CHAR)
-                    self.device_type = await self.ble_client.read_gatt_char(BLE_UUID_DCS_DEVICE_TYPE_CHAR)
-                    self.device_location = await self.ble_client.read_gatt_char(BLE_UUID_DCS_LOCATION_CHAR)
-
-                    self.device_nickname = str(self.device_nickname, 'utf-8')
-                    self.device_type = str(self.device_type, 'utf-8')
-                    self.device_location = str(self.device_location, 'utf-8')
+                    print(adl_service_uuid['config']['device_name'])
+                    self.device_type = str(await self.ble_client.read_gatt_char(adl_service_uuid['config']['device_type']), 'utf-8')
+                    self.device_nickname = str(await self.ble_client.read_gatt_char(adl_service_uuid['config']['device_name']), 'utf-8')
+                    self.device_location = str(await self.ble_client.read_gatt_char(adl_service_uuid['config']['location']), 'utf-8')
 
                     print(self.device_nickname, self.device_type, self.device_location)
                     break
@@ -455,9 +453,27 @@ class Device:
                     pass  
 
             for service in self.ble_client.services:
-                if service.uuid == BLE_UUID_DCS_SERVICE:
-                    continue
+                path = os.getcwd()+"/data"
 
+                if service.uuid == adl_service_uuid['config']['service']:
+                    continue
+                elif service.uuid == adl_service_uuid['sound']['service']:
+                    path_sound_base = os.path.join(path, self.device_location, self.device_type, self.device_address, "sound")
+                    try:
+                        for characteristic in service.characteristics:
+                            if characteristic.uuid == adl_service_uuid['sound']['processed']:
+                                path_sound_current = os.path.join(path_sound_base, "processed")
+                                self.path[str(characteristic.handle)] = path_sound_current
+                                os.makedirs(path_sound_current, exist_ok=True)
+                                await self.ble_client.start_notify(characteristic.uuid, partial(self._sound_notify_callback, self.dev))
+                            elif characteristic.uuid == adl_service_uuid['sound']['raw_streaming']:
+                                path_sound_current = os.path.join(path_sound_base, "raw")
+                                self.path[str(characteristic.handle)] = path_sound_current
+                                os.makedirs(path_sound_current, exist_ok=True)
+                                await self.ble_client.start_notify(characteristic.uuid, partial(self._sound_notify_callback, self.dev))
+                    except Exception as e:
+                        print(e)
+                        pass
                 else:                  
                     for characteristic in service.characteristics:
                         try:
@@ -465,11 +481,11 @@ class Device:
 
                             uuid_split = characteristic.uuid.split("-")
 
-                            self.device_location = Device.lookup['room'].get(uuid_split[1])
-                            self.device_type = Device.lookup['device_type'].get(uuid_split[2])
+                            device_location = Device.lookup['room'].get(uuid_split[1])
+                            device_type = Device.lookup['device_type'].get(uuid_split[2])
                             current_data_type = Device.lookup['data_type'].get(uuid_split[3])
 
-                            path = os.path.join(path, self.device_location, self.device_type, self.device_address, current_data_type)
+                            path = os.path.join(path, device_location, device_type, self.device_address, current_data_type)
                             
                             self.path[str(characteristic.handle)] = path
                             print(self.path[str(characteristic.handle)])

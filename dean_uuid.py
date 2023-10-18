@@ -1,34 +1,76 @@
-BLE_UUID_DEAN_BASE = '4eab0000-6bef-11ee-b962-10012002809a'
+adl_service_uuid = {
+    'base':                 '4eab0000-6bef-11ee-b962-10012002809a',
+    'config': {
+        'service':          '4eab0100-6bef-11ee-b962-10012002809a',
+        'device_type':      '4eab0101-6bef-11ee-b962-10012002809a',
+        'device_name':      '4eab0102-6bef-11ee-b962-10012002809a',
+        'location':         '4eab0103-6bef-11ee-b962-10012002809a'
+    },
+    'grid': {
+        'service':          '4eab0000-ffff-0001-0002-10012002809a',
+        'prediction':       '4eab0000-ffff-0001-0002-10012002809a',
+        'raw_streaming':    '4eab0000-ffff-0001-0001-10012002809a'
+    },
+    'aat': {
+        'service':          '4eab0000-ffff-0003-0005-10012002809a',
+        'action':           '4eab0000-ffff-0003-0005-10012002809a'
+    },
+    'env': {
+        'service':          '4eab0000-ffff-0001-0003-10012002809a',
+        'send':             '4eab0000-ffff-0001-0003-10012002809a',
+        'reserved':         '4eab0000-ffff-0001-0003-10012002809a'
+    },
+    'sound': {
+        'service':          '4eab0000-ffff-0001-0004-10012002809a',
+        'processed':        '4eab0000-ffff-0001-0004-10012002809a',
+        'raw_streaming':    '4eab0000-ffff-0001-00f4-10012002809a'
+    },
+    'relay': {
+        'service':          '4eab0000-ffff-0001-ff00-10012002809a',
+        'grid':             '4eab0000-ffff-0001-ff01-10012002809a',
+        'env':              '4eab0000-ffff-0001-ff02-10012002809a',
+        'aat':              '4eab0000-ffff-0001-ff03-10012002809a'
+    }
+}
+
+BLE_UUID_DEAN_BASE =                '4eab0000-6bef-11ee-b962-10012002809a'
 
 # Device Configuration Service
 
-BLE_UUID_DCS_SERVICE = '4eab0100-6bef-11ee-b962-10012002809a'
-BLE_UUID_DCS_DEVICE_NAME_CHAR = '4eab0101-6bef-11ee-b962-10012002809a'
-BLE_UUID_DCS_DEVICE_TYPE_CHAR = '4eab0102-6bef-11ee-b962-10012002809a'
-BLE_UUID_DCS_LOCATION_CHAR = '4eab0103-6bef-11ee-b962-10012002809a'
+BLE_UUID_CONFIG_SERVICE =              '4eab0100-6bef-11ee-b962-10012002809a'
+BLE_UUID_CONFIG_DEVICE_NAME_CHAR =     '4eab0101-6bef-11ee-b962-10012002809a'
+BLE_UUID_CONFIG_DEVICE_TYPE_CHAR =     '4eab0102-6bef-11ee-b962-10012002809a'
+BLE_UUID_CONFIG_LOCATION_CHAR =        '4eab0103-6bef-11ee-b962-10012002809a'
 
 # GridEye Service
 
-BLE_UUID_GRID_SERVICE = '4eab0000-ffff-0001-0000-10012002809a'
-BLE_UUID_GRID_PREDICTION_CHAR = '4eab0000-ffff-0001-0002-10012002809a'
-BLE_UUID_GRID_RAW_STREAMING_CHAR = '4eab0000-ffff-0001-0001-10012002809a'
+BLE_UUID_GRID_SERVICE =             '4eab0000-ffff-0001-0002-10012002809a'
+BLE_UUID_GRID_PREDICTION_CHAR =     '4eab0000-ffff-0001-0002-10012002809a'
+BLE_UUID_GRID_RAW_STREAMING_CHAR =  '4eab0000-ffff-0001-0001-10012002809a'
 
 # AAT Service
 
-BLE_UUID_AAT_SERVICE = '4eab0300-6bef-11ee-b962-10012002809a'
-BLE_UUID_AAT_ACTION_CHAR = '4eab0301-6bef-11ee-b962-10012002809a'
+BLE_UUID_AAT_SERVICE =              '4eab0000-ffff-0003-0005-10012002809a'
+BLE_UUID_AAT_ACTION_CHAR =          '4eab0000-ffff-0003-0005-10012002809a'
 
 # Environmental Service
 
-BLE_UUID_ENV_SERVICE = '4eab0400-6bef-11ee-b962-10012002809a'
-BLE_UUID_ENV_SEND_CHAR = '4eab0401-6bef-11ee-b962-10012002809a'
-BLE_UUID_ENV_RESERVED_CHAR = '4eab0402-6bef-11ee-b962-10012002809a'
+BLE_UUID_ENV_SERVICE =              '4eab0000-ffff-0001-0003-10012002809a'
+BLE_UUID_ENV_SEND_CHAR =            '4eab0000-ffff-0001-0003-10012002809a'
+BLE_UUID_ENV_RESERVED_CHAR =        '4eab0000-ffff-0001-0003-10012002809a'
 
 # Sound Service
 
-BLE_UUID_SND_SERVICE = '4eab0500-6bef-11ee-b962-10012002809a'
-BLE_UUID_SND_PROCESSED_CHAR = '4eab0501-6bef-11ee-b962-10012002809a'
-BLE_UUID_SND_RAW_STREAMING_CHAR = '4eab0502-6bef-11ee-b962-10012002809a'
+BLE_UUID_SND_SERVICE =              '4eab0500-6bef-11ee-b962-10012002809a'
+BLE_UUID_SND_PROCESSED_CHAR =       '4eab0501-6bef-11ee-b962-10012002809a'
+BLE_UUID_SND_RAW_STREAMING_CHAR =   '4eab0502-6bef-11ee-b962-10012002809a'
+
+# Relay Service
+
+BLE_UUID_RELAY_SERVICE =            '4eab0000-ffff-0001-ff00-10012002809a'
+BLE_UUID_RELAY_GRID_CHAR =          '4eab0000-ffff-0001-ff01-10012002809a'
+BLE_UUID_RELAY_ENV_CHAR =           '4eab0000-ffff-0001-ff02-10012002809a'
+BLE_UUID_RELAY_AAT_CHAR =           '4eab0000-ffff-0001-ff03-10012002809a'
 
 
 VER_UBINOS = True
