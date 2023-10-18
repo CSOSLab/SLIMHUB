@@ -257,7 +257,7 @@ class Device:
             sender, data = self.pipe_process.recv()
 
             if len(data) < 37:
-                self._save_file_at_dir(self.path[str(sender.handle)],str(datetime.now().strftime("%Y.%m.%d"))+".txt", data)
+                self._save_file_at_dir(self.path[str(sender.handle)],str(datetime.now().strftime("%Y-%m-%d"))+".txt", data)
                 
     def _process_sound(self):
         window_hop = int((self.sound_unit_samples * self.sound_clip_length_sec)/2)
@@ -265,13 +265,13 @@ class Device:
         while True:
             sender, data = self.pipe_process_sound.recv()
 
-            wav_path = os.path.join(self.path[str(sender.handle)],"wavfiles",str(datetime.now().strftime("%Y.%m.%d")))
+            wav_path = os.path.join(self.path[str(sender.handle)],"wavfiles",str(datetime.now().strftime("%Y-%m-%d")))
             
             os.makedirs(os.path.join(self.path[str(sender.handle)],"logs"), exist_ok=True)
             os.makedirs(os.path.join(self.path[str(sender.handle)],"raw"), exist_ok=True)
 
-            f_logs = open(os.path.join(self.path[str(sender.handle)],"logs",str(datetime.now().strftime("%Y.%m.%d.%H"))+".txt"), 'a')
-            f_raw = open(os.path.join(self.path[str(sender.handle)],"raw",str(datetime.now().strftime("%Y.%m.%d.%H"))+".txt"), 'a')
+            f_logs = open(os.path.join(self.path[str(sender.handle)],"logs",str(datetime.now().strftime("%Y-%m-%d_%H"))+".txt"), 'a')
+            f_raw = open(os.path.join(self.path[str(sender.handle)],"raw",str(datetime.now().strftime("%Y-%m-%d_%H"))+".txt"), 'a')
 
             # Mic stop trigger packet: save wav and clear buffer
             if data == b'\xff\xff\xff\xff':
