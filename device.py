@@ -9,11 +9,8 @@ import time
 import struct
 import json
 
-import mqtt
-import msgq
 import sound_process as snd
 import tensorflow_lite as tflite
-import sysv_ipc
 
 class Device:
     connected_devices = {}

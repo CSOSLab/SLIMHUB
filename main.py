@@ -8,19 +8,19 @@ import time
 import struct
 import json
 
-from mqtt import Mqtt
-import sysv_ipc
-from msgq import Msgq
+
 
 from process import *
 from device import Device
 
-env_sound_model_path = 'models/sample_sound_model.tflite'
+env_sound_model_path = 'models/cnn_12_f32.tflite'
 
 sound_process = SoundProcess()
 sound_process.set_env_sound_interpreter(env_sound_model_path)
 
 data_process = DataProcess()
+
+log_process = LogProcess()
 
 async def scan():
     target_devices = []
@@ -61,12 +61,9 @@ async def ble_main():
         await asyncio.sleep(10.0)
 
 if __name__ == "__main__":
-    # print("Mqtt On")
-    # device_manager.mqtt = Mqtt("155.230.186.52", 1883, "csosMember", "csos!1234", "HMK0H001")
-    # device_manager.mqtt.connect()
-    # device_manager.msgq = Msgq(6604, sysv_ipc.IPC_CREAT)
     sound_process.start()
     data_process.start()
+    log_process.start()
 
     print("Run Ble Main")
     asyncio.run(ble_main())

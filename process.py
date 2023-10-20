@@ -9,11 +9,12 @@ import time
 import struct
 import json
 
-import mqtt
-import msgq
 import sound_process as snd
 import tensorflow_lite as tflite
+
+import paho.mqtt.client as mqtt
 import sysv_ipc
+
 
 class Process:
     queue = None
@@ -119,15 +120,17 @@ class SoundProcess(Process):
                             mean = np.mean(buf[idx][buf[idx] > self.result_threshold])
                             f_logs.write(time+','+self.classlist[idx]+','+str(counts[idx])+','+'%.2f'%mean+'\n')
                             
-                            # # Send MQTT packet
-                            # mqtt_msg_dict = {}
+                            # Send MQTT packet
+                            mqtt_msg_dict = {}
                             # mqtt_msg_dict.update(SH_ID=self.mqtt.sh_id)
-                            # mqtt_msg_dict.update(location=self.device_location)
-                            # mqtt_msg_dict.update(time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                            # mqtt_msg_dict.update(inference_index=int(idx))
-                            # mqtt_msg_dict.update(inference_result=self.classlist[idx])
-                            # mqtt_msg_dict.update(counts=int(counts[idx]))
-                            # mqtt_msg_dict.update(mean='%.2f'%mean)
+                            # mqtt_msg_dict.update(location=self.location)
+                            mqtt_msg_dict.update(time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                            mqtt_msg_dict.update(inference_index=int(idx))
+                            mqtt_msg_dict.update(inference_result=self.classlist[idx])
+                            mqtt_msg_dict.update(counts=int(counts[idx]))
+                            mqtt_msg_dict.update(mean='%.2f'%mean)
+
+                            LogProcess.queue.put(mqtt_msg_dict)
 
                             # mqtt_msg_json = json.dumps(mqtt_msg_dict)
                             # self.mqtt.publish("/CSOS/ADL/ADL_SOUND",mqtt_msg_json)
@@ -139,7 +142,7 @@ class SoundProcess(Process):
                             # self.msgq.send(msgq_payload_sound_str, MSGQ_TYPE_SOUND)
                             
                             # Print inference result
-                            print(self.classlist[idx], counts[idx], '%.2f'%mean)
+                            # print(self.classlist[idx], counts[idx], '%.2f'%mean)
 
                         current_buffer.voting_buffer = current_buffer.voting_buffer[5:]
 
@@ -165,15 +168,17 @@ class SoundProcess(Process):
                             mean = np.mean(buf[idx][buf[idx] > self.result_threshold])
                             f_logs.write(time+','+self.classlist[idx]+','+str(counts[idx])+','+'%.2f'%mean+'\n')
                             
-                            # # Send MQTT packet
-                            # mqtt_msg_dict = {}
+                            # Send MQTT packet
+                            mqtt_msg_dict = {}
                             # mqtt_msg_dict.update(SH_ID=self.mqtt.sh_id)
-                            # mqtt_msg_dict.update(location=self.device_location)
-                            # mqtt_msg_dict.update(time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                            # mqtt_msg_dict.update(inference_index=int(idx))
-                            # mqtt_msg_dict.update(inference_result=self.classlist[idx])
-                            # mqtt_msg_dict.update(counts=int(counts[idx]))
-                            # mqtt_msg_dict.update(mean='%.2f'%mean)
+                            # mqtt_msg_dict.update(location=self.location)
+                            mqtt_msg_dict.update(time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                            mqtt_msg_dict.update(inference_index=int(idx))
+                            mqtt_msg_dict.update(inference_result=self.classlist[idx])
+                            mqtt_msg_dict.update(counts=int(counts[idx]))
+                            mqtt_msg_dict.update(mean='%.2f'%mean)
+
+                            LogProcess.queue.put(mqtt_msg_dict)
 
                             # mqtt_msg_json = json.dumps(mqtt_msg_dict)
                             # self.mqtt.publish("/CSOS/ADL/ADL_SOUND",mqtt_msg_json)
@@ -185,7 +190,7 @@ class SoundProcess(Process):
                             # self.msgq.send(msgq_payload_sound_str, MSGQ_TYPE_SOUND)
                             
                             # Print inference result
-                            print(self.classlist[idx], counts[idx], '%.2f'%mean)
+                            # print(self.classlist[idx], counts[idx], '%.2f'%mean)
 
                         current_buffer.voting_buffer = current_buffer.voting_buffer[5:]
                         
@@ -209,7 +214,7 @@ class DataProcess(Process):
         #     f_data_i=int(f_data)
         #     f_data_d=int((f_data-int(f_data))*100000)
         #     return str("%04x"%f_data_i), str("%04x"%f_data_d)
-        
+
         with open(os.path.join(dir_path, filename), mode) as f:
             if len(file_content) == 1:
                 if os.path.getsize(os.path.join(dir_path, filename)) == 0:
@@ -221,6 +226,7 @@ class DataProcess(Process):
                 grideye_msg = grideye_msg.replace("(", "").replace(")", "")
                 grideye_msg = grideye_msg.replace(",,", ",")
                 f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S")+","+grideye_msg+"\n")
+
                 # mqtt_msg_dict = {}
                 # mqtt_msg_dict.update(SH_ID=self.mqtt.sh_id)
                 # mqtt_msg_dict.update(location=self.device_location)
@@ -275,20 +281,21 @@ class DataProcess(Process):
                 log_msg_mqtt = log_msg.split(",")
                 # JSON formatting
                 found_location = dir_path[(dir_path.find("data/")+5):(dir_path.find("/ADL_DETECTOR"))]
-                # mqtt_msg_dict = {}
-                # mqtt_msg_dict.update(SH_ID=self.mqtt.sh_id)
-                # mqtt_msg_dict.update(location=found_location)
-                # mqtt_msg_dict.update(time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                # mqtt_msg_dict.update(press=log_msg_mqtt[0])
-                # mqtt_msg_dict.update(temp=log_msg_mqtt[1])
-                # mqtt_msg_dict.update(humid=log_msg_mqtt[2])
-                # mqtt_msg_dict.update(gas_raw=log_msg_mqtt[3])
-                # mqtt_msg_dict.update(iaq=log_msg_mqtt[4])
-                # mqtt_msg_dict.update(s_iaq=log_msg_mqtt[5])
-                # mqtt_msg_dict.update(eco2=log_msg_mqtt[6])
-                # mqtt_msg_dict.update(bvoc=log_msg_mqtt[7])
-                # mqtt_msg_dict.update(gas_percent=log_msg_mqtt[8])
-                # mqtt_msg_dict.update(rawdata=file_content.hex())
+                mqtt_msg_dict = {}
+                mqtt_msg_dict.update(location=found_location)
+                mqtt_msg_dict.update(time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                mqtt_msg_dict.update(press=log_msg_mqtt[0])
+                mqtt_msg_dict.update(temp=log_msg_mqtt[1])
+                mqtt_msg_dict.update(humid=log_msg_mqtt[2])
+                mqtt_msg_dict.update(gas_raw=log_msg_mqtt[3])
+                mqtt_msg_dict.update(iaq=log_msg_mqtt[4])
+                mqtt_msg_dict.update(s_iaq=log_msg_mqtt[5])
+                mqtt_msg_dict.update(eco2=log_msg_mqtt[6])
+                mqtt_msg_dict.update(bvoc=log_msg_mqtt[7])
+                mqtt_msg_dict.update(gas_percent=log_msg_mqtt[8])
+                mqtt_msg_dict.update(rawdata=file_content.hex())
+
+                LogProcess.queue.put(mqtt_msg_dict)
 
                 # mqtt_msg_json = json.dumps(mqtt_msg_dict)
                 # # print(mqtt_msg_json)
@@ -322,8 +329,7 @@ class DataProcess(Process):
                 #                                     int(msgq_payload_list[8]), int((msgq_payload_list[8] - int(msgq_payload_list[8]))*msgq_payload_dec_resolution))    #gas_percent
                 # self.msgq.send(env_msgq_payload_temp, MSGQ_TYPE_ENV)
                 f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S")+","+file_msg+"\n")
-                print(file_msg)
-    
+
     def _run(self):
         while True:
             address, path, data = self.queue.get()
@@ -335,4 +341,56 @@ class LogProcess(Process):
     MSGQ_TYPE_DEVICE = 1
     MSGQ_TYPE_ENV = 2
     MSGQ_TYPE_SOUND = 3
+
+    queue = mp.Queue()
+
+    class Msgq():
+        def __init__(self, key_t, flag):
+            self.key_t = key_t
+            self.flag = flag
+            self.MessageQueue = sysv_ipc.MessageQueue(key_t, flag)
+        
+        def send(self, payload, msg_type):
+            self.MessageQueue.send(payload, True, type=msg_type)
+        
+        def recv(self):
+            self.MessageQueue.receive()
+
+    class Mqtt():
+        def __init__(self, ip, port, id, passwd, sh_id):
+            self.ip = ip
+            self.port = port
+            self.id = id
+            self.passwd = passwd
+            self.client = mqtt.Client("")
+
+            self.sh_id = sh_id
+
+        def connect(self):
+            self.client.username_pw_set(username=self.id, password=self.passwd)
+            self.client.connect(self.ip, self.port)
+
+        def publish(self, topic, message):
+            self.client.publish(topic, message)
+
+        def disconnect(self):
+            self.client.disconnect()
+
+    def __init__(self):
+        self.process = mp.Process(target=self._run)
+
+        # print("Mqtt On")
+        self.mqtt = self.Mqtt("155.230.186.52", 1883, "csosMember", "csos!1234", "HMK0H001")
+        # self.mqtt.connect()
+        self.msgq = self.Msgq(6604, sysv_ipc.IPC_CREAT)
     
+    def _run(self):
+        while True:
+            msg_dict = self.queue.get()
+
+            msg_dict.update(SH_ID=self.mqtt.sh_id)
+
+            mqtt_msg_json = json.dumps(msg_dict)
+            print("[MQTT] : " + mqtt_msg_json)
+
+            self.mqtt.publish("/CSOS/ADL/ADLDATA",mqtt_msg_json)
