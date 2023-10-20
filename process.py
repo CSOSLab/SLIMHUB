@@ -124,6 +124,7 @@ class SoundProcess(Process):
                             mqtt_msg_dict = {}
                             # mqtt_msg_dict.update(SH_ID=self.mqtt.sh_id)
                             # mqtt_msg_dict.update(location=self.location)
+                            mqtt_msg_dict.update(address=address)
                             mqtt_msg_dict.update(time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                             mqtt_msg_dict.update(inference_index=int(idx))
                             mqtt_msg_dict.update(inference_result=self.classlist[idx])
@@ -172,6 +173,7 @@ class SoundProcess(Process):
                             mqtt_msg_dict = {}
                             # mqtt_msg_dict.update(SH_ID=self.mqtt.sh_id)
                             # mqtt_msg_dict.update(location=self.location)
+                            mqtt_msg_dict.update(address=address)
                             mqtt_msg_dict.update(time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                             mqtt_msg_dict.update(inference_index=int(idx))
                             mqtt_msg_dict.update(inference_result=self.classlist[idx])
@@ -204,7 +206,7 @@ class DataProcess(Process):
         self.queue = mp.Queue()
         self.process = mp.Process(target=self._run)
     # Process functions ------------------------------------------------------------
-    def _save_file_at_dir(self, dir_path, filename, file_content, mode='a'):
+    def _save_file_at_dir(self, address, dir_path, filename, file_content, mode='a'):
         def swapEndianness(hexstring):
             ba = bytearray.fromhex(hexstring)
             ba.reverse()
@@ -282,6 +284,7 @@ class DataProcess(Process):
                 # JSON formatting
                 found_location = dir_path[(dir_path.find("data/")+5):(dir_path.find("/ADL_DETECTOR"))]
                 mqtt_msg_dict = {}
+                mqtt_msg_dict.update(address=address)
                 mqtt_msg_dict.update(location=found_location)
                 mqtt_msg_dict.update(time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                 mqtt_msg_dict.update(press=log_msg_mqtt[0])
@@ -335,7 +338,7 @@ class DataProcess(Process):
             address, path, data = self.queue.get()
 
             if len(data) < 37:
-                self._save_file_at_dir(path, str(datetime.now().strftime("%Y-%m-%d"))+".txt", data)
+                self._save_file_at_dir(address, path, str(datetime.now().strftime("%Y-%m-%d"))+".txt", data)
 
 class LogProcess(Process):
     MSGQ_TYPE_DEVICE = 1
