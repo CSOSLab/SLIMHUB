@@ -64,25 +64,27 @@ class SoundProcess(Process):
         window_hop = int((self.sound_unit_samples * self.sound_clip_length_sec)/2)
 
         while True:
-            address, path, data = self.queue.get()
+            address, received_time, path, data = self.queue.get()
+
+            time_dt = datetime.fromtimestamp(received_time)
 
             if address not in self.buffer:
                 self.buffer[address] = self.Buffer()
             
             current_buffer = self.buffer[address]
 
-            wav_path = os.path.join(path,"wavfiles",str(datetime.now().strftime("%Y-%m-%d")))
+            wav_path = os.path.join(path,"wavfiles",str(time_dt.strftime("%Y-%m-%d")))
             
             os.makedirs(os.path.join(path,"logs"), exist_ok=True)
             os.makedirs(os.path.join(path,"raw"), exist_ok=True)
 
-            f_logs = open(os.path.join(path,"logs",str(datetime.now().strftime("%Y-%m-%d_%H"))+".txt"), 'a')
-            f_raw = open(os.path.join(path,"raw",str(datetime.now().strftime("%Y-%m-%d_%H"))+".txt"), 'a')
+            f_logs = open(os.path.join(path,"logs",str(time_dt.strftime("%Y-%m-%d_%H"))+".txt"), 'a')
+            f_raw = open(os.path.join(path,"raw",str(time_dt.strftime("%Y-%m-%d_%H"))+".txt"), 'a')
 
             # Mic stop trigger packet: save wav and clear buffer
             if data == b'\xff\xff\xff\xff':
                 os.makedirs(wav_path, exist_ok=True)
-                snd.save_wav(os.path.join(wav_path, str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))+".wav"), current_buffer.pcm_buffer, self.sound_sample_rate)
+                snd.save_wav(os.path.join(wav_path, str(time_dt.strftime("%Y-%m-%d %H:%M:%S"))+".wav"), current_buffer.pcm_buffer, self.sound_sample_rate)
                 current_buffer.pcm_buffer.clear()
                 current_buffer.voting_buffer.clear()
                 continue
@@ -95,59 +97,9 @@ class SoundProcess(Process):
                 # Save wav files every 'sound_clip_length_sec' sec
                 if len(current_buffer.pcm_buffer) >= (self.sound_sample_rate * self.sound_clip_length_sec):
                     os.makedirs(wav_path, exist_ok=True)
-                    snd.save_wav(os.path.join(wav_path, str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))+".wav"), current_buffer.pcm_buffer, self.sound_sample_rate)
+                    snd.save_wav(os.path.join(wav_path, str(time_dt.strftime("%Y-%m-%d %H:%M:%S"))+".wav"), current_buffer.pcm_buffer, self.sound_sample_rate)
                     current_buffer.pcm_buffer.clear()
 
-                # Inference every 'window_hop' sec
-                if (len(current_buffer.pcm_buffer) >= (self.sound_unit_samples)):
-                    # Preprocess and inference
-                    mfcc = snd.get_mfcc(current_buffer.pcm_buffer[:self.sound_unit_samples], sr=self.sound_sample_rate, n_mfcc=32, n_mels=64, n_fft=1000, n_hop=500)
-
-                    result = tflite.inference(self.env_interpreter, mfcc)
-
-                    # Save raw inference result
-                    time = str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                    f_raw.write(time+','+','.join(result.astype(str))+'\n')
-
-                    # Postprocessing
-                    current_buffer.voting_buffer.append(result)
-                    if len(current_buffer.voting_buffer) == self.voting_buffer_len:
-                        # Todo: Postprocessing
-                        buf = np.array(current_buffer.voting_buffer).swapaxes(0, 1)
-                        counts = np.sum(buf > self.result_threshold, axis=1)
-                        idxs = np.where(counts != 0)[0]
-                        for idx in idxs:
-                            mean = np.mean(buf[idx][buf[idx] > self.result_threshold])
-                            f_logs.write(time+','+self.classlist[idx]+','+str(counts[idx])+','+'%.2f'%mean+'\n')
-                            
-                            # Send MQTT packet
-                            mqtt_msg_dict = {}
-                            # mqtt_msg_dict.update(SH_ID=self.mqtt.sh_id)
-                            # mqtt_msg_dict.update(location=self.location)
-                            mqtt_msg_dict.update(address=address)
-                            mqtt_msg_dict.update(time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                            mqtt_msg_dict.update(inference_index=int(idx))
-                            mqtt_msg_dict.update(inference_result=self.classlist[idx])
-                            mqtt_msg_dict.update(counts=int(counts[idx]))
-                            mqtt_msg_dict.update(mean='%.2f'%mean)
-
-                            LogProcess.queue.put(mqtt_msg_dict)
-
-                            # mqtt_msg_json = json.dumps(mqtt_msg_dict)
-                            # self.mqtt.publish("/CSOS/ADL/ADL_SOUND",mqtt_msg_json)
-                            
-                            # # packing data into string format
-                            # msgq_payload_sound_str = ""
-                            # # msgq_payload_sound_str = msgq_payload_sound_str+str(idx)+str(Device.classlist[idx])+str(counts[idx])+str('%.2f'%mean)
-                            # msgq_payload_sound_str = msgq_payload_sound_str+"SJK,"+str(self.device_location)+","+str(self.classlist[idx])+","+str(idx)+","+str('%.2f'%mean)+",,,,,,,"+"\n"
-                            # self.msgq.send(msgq_payload_sound_str, MSGQ_TYPE_SOUND)
-                            
-                            # Print inference result
-                            # print(self.classlist[idx], counts[idx], '%.2f'%mean)
-
-                        current_buffer.voting_buffer = current_buffer.voting_buffer[5:]
-
-                    current_buffer.pcm_buffer = current_buffer.pcm_buffer[window_hop:]
             else:
                 current_buffer.mfcc_buffer.append([struct.unpack('<f', data[i:i+4])[0] for i in range(0, len(data), 4)])
                 
@@ -155,8 +107,8 @@ class SoundProcess(Process):
                     result = tflite.inference(self.env_interpreter, np.array(current_buffer.mfcc_buffer, dtype='float32').T[..., np.newaxis])
 
                     # Save raw inference result
-                    time = str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                    f_raw.write(time+','+','.join(result.astype(str))+'\n')
+                    log_time = str(time_dt.strftime("%Y-%m-%d %H:%M:%S"))
+                    f_raw.write(log_time+','+','.join(result.astype(str))+'\n')
 
                     # Postprocessing
                     current_buffer.voting_buffer.append(result)
@@ -167,20 +119,20 @@ class SoundProcess(Process):
                         idxs = np.where(counts != 0)[0]
                         for idx in idxs:
                             mean = np.mean(buf[idx][buf[idx] > self.result_threshold])
-                            f_logs.write(time+','+self.classlist[idx]+','+str(counts[idx])+','+'%.2f'%mean+'\n')
+                            f_logs.write(log_time+','+self.classlist[idx]+','+str(counts[idx])+','+'%.2f'%mean+'\n')
                             
                             # Send MQTT packet
-                            mqtt_msg_dict = {}
+                            # mqtt_msg_dict = {}
                             # mqtt_msg_dict.update(SH_ID=self.mqtt.sh_id)
                             # mqtt_msg_dict.update(location=self.location)
-                            mqtt_msg_dict.update(address=address)
-                            mqtt_msg_dict.update(time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                            mqtt_msg_dict.update(inference_index=int(idx))
-                            mqtt_msg_dict.update(inference_result=self.classlist[idx])
-                            mqtt_msg_dict.update(counts=int(counts[idx]))
-                            mqtt_msg_dict.update(mean='%.2f'%mean)
+                            # mqtt_msg_dict.update(address=address)
+                            # mqtt_msg_dict.update(time=time_dt.strftime("%Y-%m-%d %H:%M:%S"))
+                            # mqtt_msg_dict.update(inference_index=int(idx))
+                            # mqtt_msg_dict.update(inference_result=self.classlist[idx])
+                            # mqtt_msg_dict.update(counts=int(counts[idx]))
+                            # mqtt_msg_dict.update(mean='%.2f'%mean)
 
-                            LogProcess.queue.put(mqtt_msg_dict)
+                            # LogProcess.queue.put(mqtt_msg_dict)
 
                             # mqtt_msg_json = json.dumps(mqtt_msg_dict)
                             # self.mqtt.publish("/CSOS/ADL/ADL_SOUND",mqtt_msg_json)
@@ -193,10 +145,14 @@ class SoundProcess(Process):
                             
                             # Print inference result
                             # print(self.classlist[idx], counts[idx], '%.2f'%mean)
-
-                        current_buffer.voting_buffer = current_buffer.voting_buffer[5:]
                         
-                    current_buffer.mfcc_buffer = current_buffer.mfcc_buffer[16:]
+                        # Process time check
+                        # processed_time = time.time()
+                        # print(address, ':', (processed_time-received_time)*1000,'ms')
+
+                        current_buffer.voting_buffer = current_buffer.voting_buffer[1:]
+                        
+                    current_buffer.mfcc_buffer = current_buffer.mfcc_buffer[8:]
             
             f_logs.close()
             f_raw.close()
@@ -206,12 +162,14 @@ class DataProcess(Process):
         self.queue = mp.Queue()
         self.process = mp.Process(target=self._run)
     # Process functions ------------------------------------------------------------
-    def _save_file_at_dir(self, address, dir_path, filename, file_content, mode='a'):
+    def _save_file_at_dir(self, address, dir_path, received_time, file_content, mode='a'):
         def swapEndianness(hexstring):
             ba = bytearray.fromhex(hexstring)
             ba.reverse()
             return ba.hex()
         
+        time_dt = datetime.fromtimestamp(received_time)
+        filename = str(time_dt.strftime("%Y-%m-%d")+".txt")
         # def mqtt_data(f_data):
         #     f_data_i=int(f_data)
         #     f_data_d=int((f_data-int(f_data))*100000)
@@ -224,15 +182,15 @@ class DataProcess(Process):
                 grideye_msg = ""
                 grideye_unpacked = struct.unpack("<B", file_content)
                 grideye_msg = grideye_msg+str(grideye_unpacked)
-                # f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S")+","+str(grideye_msg)+"\n")
+                # f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+str(grideye_msg)+"\n")
                 grideye_msg = grideye_msg.replace("(", "").replace(")", "")
                 grideye_msg = grideye_msg.replace(",,", ",")
-                f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S")+","+grideye_msg+"\n")
+                f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+grideye_msg+"\n")
 
                 # mqtt_msg_dict = {}
                 # mqtt_msg_dict.update(SH_ID=self.mqtt.sh_id)
                 # mqtt_msg_dict.update(location=self.device_location)
-                # mqtt_msg_dict.update(time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                # mqtt_msg_dict.update(time=time_dt.strftime("%Y-%m-%d %H:%M:%S"))
                 # mqtt_msg_dict.update(grideye_raw=grideye_msg)
                 # mqtt_msg_json = json.dumps(mqtt_msg_dict)
                 # self.mqtt.publish("/CSOS/ADL/ADLDATA",mqtt_msg_json)
@@ -248,16 +206,16 @@ class DataProcess(Process):
                 aat_msg = ""
                 aat_unpacked = struct.unpack("<BBBBBBBBBB", file_content)
                 aat_msg = aat_msg+str(aat_unpacked)
-                # f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S")+","+str(aat_msg)+"\n")
+                # f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+str(aat_msg)+"\n")
                 aat_msg = aat_msg.replace("(", "").replace(")", "")
                 aat_msg = aat_msg.replace(",,", ",")
-                f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S")+","+aat_msg+"\n")
+                f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+aat_msg+"\n")
 
                 found_location = dir_path[(dir_path.find("data/")+5):(dir_path.find("/AAT"))]
                 # mqtt_msg_dict = {}
                 # mqtt_msg_dict.update(SH_ID=self.mqtt.sh_id)
                 # mqtt_msg_dict.update(location=found_location)
-                # mqtt_msg_dict.update(time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                # mqtt_msg_dict.update(time=time_dt.strftime("%Y-%m-%d %H:%M:%S"))
                 # # mqtt_msg_dict.update(aat=)
             else:
                 if os.path.getsize(os.path.join(dir_path, filename)) == 0:
@@ -286,7 +244,7 @@ class DataProcess(Process):
                 mqtt_msg_dict = {}
                 mqtt_msg_dict.update(address=address)
                 mqtt_msg_dict.update(location=found_location)
-                mqtt_msg_dict.update(time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                mqtt_msg_dict.update(time=time_dt.strftime("%Y-%m-%d %H:%M:%S"))
                 mqtt_msg_dict.update(press=log_msg_mqtt[0])
                 mqtt_msg_dict.update(temp=log_msg_mqtt[1])
                 mqtt_msg_dict.update(humid=log_msg_mqtt[2])
@@ -304,7 +262,7 @@ class DataProcess(Process):
                 # # print(mqtt_msg_json)
 
                 # print("[MQTT] : " + mqtt_msg_json)
-                # # print("[LOG] : " + datetime.now().strftime("%X")+","+log_msg)
+                # # print("[LOG] : " + time_dt.strftime("%X")+","+log_msg)
                 # self.mqtt.publish("/CSOS/ADL/ENVDATA",mqtt_msg_json)
                 
                 # # packing data to integer.decimal (int).(int) format
@@ -331,14 +289,14 @@ class DataProcess(Process):
                 #                                     int(msgq_payload_list[7]), int((msgq_payload_list[7] - int(msgq_payload_list[7]))*msgq_payload_dec_resolution),    #bvoc
                 #                                     int(msgq_payload_list[8]), int((msgq_payload_list[8] - int(msgq_payload_list[8]))*msgq_payload_dec_resolution))    #gas_percent
                 # self.msgq.send(env_msgq_payload_temp, MSGQ_TYPE_ENV)
-                f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S")+","+file_msg+"\n")
+                f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+file_msg+"\n")
 
     def _run(self):
         while True:
-            address, path, data = self.queue.get()
+            address, received_time, path, data = self.queue.get()
 
             if len(data) < 37:
-                self._save_file_at_dir(address, path, str(datetime.now().strftime("%Y-%m-%d"))+".txt", data)
+                self._save_file_at_dir(address, path, received_time, data)
 
 class LogProcess(Process):
     MSGQ_TYPE_DEVICE = 1

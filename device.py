@@ -66,12 +66,14 @@ class Device:
 
         # BLE functions ------------------------------------------------------------
     def _data_notify_callback(self, sender, data):
+        received_time = time.time()
         if not self.data_queue.full():
-            self.data_queue.put([self.address, self.path[str(sender.handle)], data])
+            self.data_queue.put([self.address, received_time, self.path[str(sender.handle)], data])
     
     def _sound_notify_callback(self, sender, data):
+        received_time = time.time()
         if not self.sound_queue.full():
-            self.sound_queue.put([self.address, self.path[str(sender.handle)], data])
+            self.sound_queue.put([self.address, received_time, self.path[str(sender.handle)], data])
 
     async def _ble_worker(self, disconnected_callback=None):
         self.ble_client = BleakClient(self.address, disconnected_callback=disconnected_callback)
