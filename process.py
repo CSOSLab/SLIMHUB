@@ -101,7 +101,10 @@ class SoundProcess(Process):
                     current_buffer.pcm_buffer.clear()
 
             else:
-                current_buffer.mfcc_buffer.append([struct.unpack('<f', data[i:i+4])[0] for i in range(0, len(data), 4)])
+                try:
+                    current_buffer.mfcc_buffer.append([struct.unpack('<f', data[i:i+4])[0] for i in range(0, len(data), 4)])
+                except:
+                    continue
                 
                 if len(current_buffer.mfcc_buffer) == 32:
                     result = tflite.inference(self.env_interpreter, np.array(current_buffer.mfcc_buffer, dtype='float32').T[..., np.newaxis])
@@ -147,8 +150,8 @@ class SoundProcess(Process):
                             # print(self.classlist[idx], counts[idx], '%.2f'%mean)
                         
                         # Process time check
-                        # processed_time = time.time()
-                        # print(address, ':', (processed_time-received_time)*1000,'ms')
+                        processed_time = time.time()
+                        print(address, 'SOUND:', (processed_time-received_time)*1000,'ms')
 
                         current_buffer.voting_buffer = current_buffer.voting_buffer[1:]
                         
@@ -297,6 +300,8 @@ class DataProcess(Process):
 
             if len(data) < 37:
                 self._save_file_at_dir(address, path, received_time, data)
+                processed_time = time.time()
+                print(address, 'DATA:', (processed_time-received_time)*1000,'ms')
 
 class LogProcess(Process):
     MSGQ_TYPE_DEVICE = 1
@@ -352,6 +357,6 @@ class LogProcess(Process):
             msg_dict.update(SH_ID=self.mqtt.sh_id)
 
             mqtt_msg_json = json.dumps(msg_dict)
-            print("[MQTT] : " + mqtt_msg_json)
+            # print("[MQTT] : " + mqtt_msg_json)
 
             self.mqtt.publish("/CSOS/ADL/ADLDATA",mqtt_msg_json)

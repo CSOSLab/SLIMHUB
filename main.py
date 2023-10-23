@@ -8,8 +8,6 @@ import time
 import struct
 import json
 
-
-
 from process import *
 from device import Device
 
