@@ -87,14 +87,12 @@ class Device:
             for i in range(retry_count):
                 try:
                     print(adl_service_uuid['config']['device_name'])
-                    self.device_type = str(await self.ble_client.read_gatt_char(adl_service_uuid['config']['device_type']), 'utf-8')
-                    self.device_nickname = str(await self.ble_client.read_gatt_char(adl_service_uuid['config']['device_name']), 'utf-8')
-                    self.device_location = str(await self.ble_client.read_gatt_char(adl_service_uuid['config']['location']), 'utf-8')
-
-                    print(self.device_nickname, self.device_type, self.device_location)
+                    self.type = str(await self.ble_client.read_gatt_char(adl_service_uuid['config']['device_type']), 'utf-8')
+                    self.id = str(await self.ble_client.read_gatt_char(adl_service_uuid['config']['device_name']), 'utf-8')
+                    self.location = str(await self.ble_client.read_gatt_char(adl_service_uuid['config']['location']), 'utf-8')
                     break
                 except:
-                    pass  
+                    continue  
 
             for service in self.ble_client.services:
                 path = os.getcwd()+"/data"
