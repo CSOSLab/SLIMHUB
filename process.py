@@ -35,6 +35,7 @@ class SoundProcess(Process):
                  'toilet_flushing', 'walking', 'brushing_teeth']
 
     data_collection_mode = False
+    save_in_wav = False
 
     class Buffer:
         def __init__(self):
@@ -42,6 +43,7 @@ class SoundProcess(Process):
             self.mfcc_buffer = []
             self.voting_buffer = []
             self.result_buffer = []
+            self.byte_buffer = []
 
     def __init__(self):
         self.queue = mp.Queue()
@@ -49,7 +51,7 @@ class SoundProcess(Process):
 
         self.sound_sample_rate = self.DEFAULT_SAMPLE_RATE
         self.sound_unit_samples = self.DEFAULT_UNIT_SAMPLES
-        self.sound_clip_length_sec = 30
+        self.sound_clip_length_sec = 10
 
         self.result_threshold = 0.6
         self.voting_buffer_len = 7
@@ -74,33 +76,58 @@ class SoundProcess(Process):
             current_buffer = self.buffer[address]
 
             wav_path = os.path.join(path,"wavfiles",str(time_dt.strftime("%Y-%m-%d")))
+            byte_path = os.path.join(path,"byte",str(time_dt.strftime("%Y-%m-%d")))
             
             os.makedirs(os.path.join(path,"logs"), exist_ok=True)
             os.makedirs(os.path.join(path,"raw"), exist_ok=True)
 
             f_logs = open(os.path.join(path,"logs",str(time_dt.strftime("%Y-%m-%d_%H"))+".txt"), 'a')
             f_raw = open(os.path.join(path,"raw",str(time_dt.strftime("%Y-%m-%d_%H"))+".txt"), 'a')
-
-            # Mic stop trigger packet: save wav and clear buffer
-            if data == b'\xff\xff\xff\xff':
-                os.makedirs(wav_path, exist_ok=True)
-                snd.save_wav(os.path.join(wav_path, str(time_dt.strftime("%Y-%m-%d %H:%M:%S"))+".wav"), current_buffer.pcm_buffer, self.sound_sample_rate)
-                current_buffer.pcm_buffer.clear()
-                current_buffer.voting_buffer.clear()
-                continue
             
             if self.data_collection_mode:
-                pcm = snd.adpcm_decode(data)
+                # Mic stop trigger packet: save wav and clear buffer
+                if data == b'\xff\xff\xff\xff':
+                    if self.save_in_wav:
+                        os.makedirs(wav_path, exist_ok=True)
+                        snd.save_wav(os.path.join(wav_path, str(time_dt.strftime("%Y-%m-%d_%H:%M:%S"))+".wav"), current_buffer.pcm_buffer, self.sound_sample_rate)
+                        current_buffer.pcm_buffer.clear()
+                    else:
+                        os.makedirs(byte_path, exist_ok=True)
+                        with open(os.path.join(byte_path, str(time_dt.strftime("%Y-%m-%d_%H:%M:%S"))+".txt"), "wb") as f:
+                            f.write(bytearray(current_buffer.byte_buffer))
+                        current_buffer.byte_buffer.clear()
+                    current_buffer.voting_buffer.clear()
+                    continue
 
-                current_buffer.pcm_buffer.extend(pcm)
-                
-                # Save wav files every 'sound_clip_length_sec' sec
-                if len(current_buffer.pcm_buffer) >= (self.sound_sample_rate * self.sound_clip_length_sec):
-                    os.makedirs(wav_path, exist_ok=True)
-                    snd.save_wav(os.path.join(wav_path, str(time_dt.strftime("%Y-%m-%d %H:%M:%S"))+".wav"), current_buffer.pcm_buffer, self.sound_sample_rate)
-                    current_buffer.pcm_buffer.clear()
+                if self.save_in_wav:
+                    pcm = snd.adpcm_decode(data)
 
+                    current_buffer.pcm_buffer.extend(pcm)
+                    
+                    # Save wav files every 'sound_clip_length_sec' sec
+                    if len(current_buffer.pcm_buffer) >= (self.sound_sample_rate * self.sound_clip_length_sec):
+                        os.makedirs(wav_path, exist_ok=True)
+                        snd.save_wav(os.path.join(wav_path, str(time_dt.strftime("%Y-%m-%d_%H:%M:%S"))+".wav"), current_buffer.pcm_buffer, self.sound_sample_rate)
+                        current_buffer.pcm_buffer.clear()
+
+                else:
+                    current_buffer.byte_buffer.extend(data)
+
+                    # processed_time = time.time()
+                    # print(address, 'SOUND:', (processed_time-received_time)*1000,'ms')
+
+                    if(len(current_buffer.byte_buffer) >= (len(data) * 32 * self.sound_clip_length_sec)):
+                        os.makedirs(byte_path, exist_ok=True)
+                        with open(os.path.join(byte_path, str(time_dt.strftime("%Y-%m-%d_%H:%M:%S"))+".txt"), "wb") as f:
+                            f.write(bytearray(current_buffer.byte_buffer))
+                        current_buffer.byte_buffer.clear()
+                    
             else:
+                # Mic stop trigger packet: save wav and clear buffer
+                if data == b'\xff\xff\xff\xff':
+                    current_buffer.mfcc_buffer.clear()
+                    current_buffer.voting_buffer.clear()
+
                 try:
                     current_buffer.mfcc_buffer.append([struct.unpack('<f', data[i:i+4])[0] for i in range(0, len(data), 4)])
                 except:
@@ -123,31 +150,6 @@ class SoundProcess(Process):
                         for idx in idxs:
                             mean = np.mean(buf[idx][buf[idx] > self.result_threshold])
                             f_logs.write(log_time+','+self.classlist[idx]+','+str(counts[idx])+','+'%.2f'%mean+'\n')
-                            
-                            # Send MQTT packet
-                            # mqtt_msg_dict = {}
-                            # mqtt_msg_dict.update(SH_ID=self.mqtt.sh_id)
-                            # mqtt_msg_dict.update(location=self.location)
-                            # mqtt_msg_dict.update(address=address)
-                            # mqtt_msg_dict.update(time=time_dt.strftime("%Y-%m-%d %H:%M:%S"))
-                            # mqtt_msg_dict.update(inference_index=int(idx))
-                            # mqtt_msg_dict.update(inference_result=self.classlist[idx])
-                            # mqtt_msg_dict.update(counts=int(counts[idx]))
-                            # mqtt_msg_dict.update(mean='%.2f'%mean)
-
-                            # LogProcess.queue.put(mqtt_msg_dict)
-
-                            # mqtt_msg_json = json.dumps(mqtt_msg_dict)
-                            # self.mqtt.publish("/CSOS/ADL/ADL_SOUND",mqtt_msg_json)
-                            
-                            # # packing data into string format
-                            # msgq_payload_sound_str = ""
-                            # # msgq_payload_sound_str = msgq_payload_sound_str+str(idx)+str(Device.classlist[idx])+str(counts[idx])+str('%.2f'%mean)
-                            # msgq_payload_sound_str = msgq_payload_sound_str+"SJK,"+str(self.device_location)+","+str(self.classlist[idx])+","+str(idx)+","+str('%.2f'%mean)+",,,,,,,"+"\n"
-                            # self.msgq.send(msgq_payload_sound_str, MSGQ_TYPE_SOUND)
-                            
-                            # Print inference result
-                            # print(self.classlist[idx], counts[idx], '%.2f'%mean)
                         
                         # Process time check
                         processed_time = time.time()
