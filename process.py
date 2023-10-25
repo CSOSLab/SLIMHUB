@@ -9,12 +9,15 @@ import time
 import struct
 import json
 
-import sound_process as snd
 import tensorflow_lite as tflite
 
 import paho.mqtt.client as mqtt
 import sysv_ipc
 
+import soundfile as sf
+import librosa
+
+from decoder import Decoder
 
 class Process:
     queue = None
@@ -37,6 +40,8 @@ class SoundProcess(Process):
     data_collection_mode = False
     save_in_wav = False
 
+    decoder = Decoder()
+
     class Buffer:
         def __init__(self):
             self.pcm_buffer = []
@@ -57,6 +62,18 @@ class SoundProcess(Process):
         self.voting_buffer_len = 7
 
         self.buffer = {}
+
+    def save_wav(self, output_path, input, sr):
+        sf.write(output_path, input, sr, 'PCM_16')
+        print(output_path, 'saved')
+
+    def get_mfcc(self, input, sr, n_mfcc, n_mels, n_fft, n_hop):
+        input_pcm = np.array(input, dtype=np.float32)
+        mfcc = librosa.feature.mfcc(y=input_pcm, sr=sr, n_mfcc=n_mfcc, n_mels=n_mels, n_fft=n_fft, hop_length=n_hop)
+        mfcc = mfcc[:,:-1]
+        mfcc = mfcc[..., np.newaxis]
+
+        return mfcc
     
     # TFLite functions ------------------------------------------------------------
     def set_env_sound_interpreter(self, model_path):
@@ -89,38 +106,39 @@ class SoundProcess(Process):
                 if data == b'\xff\xff\xff\xff':
                     if self.save_in_wav:
                         os.makedirs(wav_path, exist_ok=True)
-                        snd.save_wav(os.path.join(wav_path, str(time_dt.strftime("%Y-%m-%d_%H:%M:%S"))+".wav"), current_buffer.pcm_buffer, self.sound_sample_rate)
+                        self.save_wav(os.path.join(wav_path, str(time_dt.strftime("%Y-%m-%d_%H:%M:%S"))+".wav"), current_buffer.pcm_buffer, self.sound_sample_rate)
                         current_buffer.pcm_buffer.clear()
                     else:
                         os.makedirs(byte_path, exist_ok=True)
-                        with open(os.path.join(byte_path, str(time_dt.strftime("%Y-%m-%d_%H:%M:%S"))+".txt"), "wb") as f:
+                        with open(os.path.join(byte_path, str(time_dt.strftime("%Y-%m-%d_%H:%M:%S"))+".dat"), "wb") as f:
                             f.write(bytearray(current_buffer.byte_buffer))
                         current_buffer.byte_buffer.clear()
                     current_buffer.voting_buffer.clear()
                     continue
 
                 if self.save_in_wav:
-                    pcm = snd.adpcm_decode(data)
+                    pcm = self.decoder.adpcm_decode(data)
 
                     current_buffer.pcm_buffer.extend(pcm)
                     
                     # Save wav files every 'sound_clip_length_sec' sec
                     if len(current_buffer.pcm_buffer) >= (self.sound_sample_rate * self.sound_clip_length_sec):
                         os.makedirs(wav_path, exist_ok=True)
-                        snd.save_wav(os.path.join(wav_path, str(time_dt.strftime("%Y-%m-%d_%H:%M:%S"))+".wav"), current_buffer.pcm_buffer, self.sound_sample_rate)
+                        self.save_wav(os.path.join(wav_path, str(time_dt.strftime("%Y-%m-%d_%H:%M:%S"))+".wav"), current_buffer.pcm_buffer, self.sound_sample_rate)
                         current_buffer.pcm_buffer.clear()
 
                 else:
                     current_buffer.byte_buffer.extend(data)
 
-                    # processed_time = time.time()
-                    # print(address, 'SOUND:', (processed_time-received_time)*1000,'ms')
-
                     if(len(current_buffer.byte_buffer) >= (len(data) * 32 * self.sound_clip_length_sec)):
                         os.makedirs(byte_path, exist_ok=True)
-                        with open(os.path.join(byte_path, str(time_dt.strftime("%Y-%m-%d_%H:%M:%S"))+".txt"), "wb") as f:
+                        with open(os.path.join(byte_path, str(time_dt.strftime("%Y-%m-%d_%H:%M:%S"))+".dat"), "wb") as f:
                             f.write(bytearray(current_buffer.byte_buffer))
                         current_buffer.byte_buffer.clear()
+
+                # Process time check
+                # processed_time = time.time()
+                # print(address, 'SOUND:', (processed_time-received_time)*1000,'ms')
                     
             else:
                 # Mic stop trigger packet: save wav and clear buffer
