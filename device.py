@@ -77,79 +77,73 @@ class Device:
         if not self.sound_queue.full():
             self.sound_queue.put([self.address, received_time, self.path[str(sender.handle)], data])
 
+    def get_service_by_uuid(self, service_uuid):
+        for service in self.ble_client.services:
+            if service.uuid == service_uuid:
+                return service
+        return None
+
     async def _ble_worker(self, disconnected_callback=None):
         self.ble_client = BleakClient(self.address, disconnected_callback=disconnected_callback)
 
+        # Connect and read device info
         try:
             await self.ble_client.connect()
 
-            retry_count = 5
-            for i in range(retry_count):
-                try:
-                    print(adl_service_uuid['config']['device_name'])
-                    self.type = str(await self.ble_client.read_gatt_char(adl_service_uuid['config']['device_type']), 'utf-8')
-                    self.id = str(await self.ble_client.read_gatt_char(adl_service_uuid['config']['device_name']), 'utf-8')
-                    self.location = str(await self.ble_client.read_gatt_char(adl_service_uuid['config']['location']), 'utf-8')
-                    break
-                except:
-                    continue  
-
-            for service in self.ble_client.services:
-                path = os.getcwd()+"/data"
-
-                if service.uuid == adl_service_uuid['config']['service']:
-                    continue
-                elif service.uuid == adl_service_uuid['sound']['service']:
-                    path_sound_base = os.path.join(path, self.device_location, self.device_type, self.device_address, "sound")
-                    try:
-                        for characteristic in service.characteristics:
-                            if characteristic.uuid == adl_service_uuid['sound']['processed']:
-                                path_sound_current = os.path.join(path_sound_base, "processed")
-                                self.path[str(characteristic.handle)] = path_sound_current
-                                os.makedirs(path_sound_current, exist_ok=True)
-                                await self.ble_client.start_notify(characteristic.uuid, partial(self._sound_notify_callback, self.dev))
-                            elif characteristic.uuid == adl_service_uuid['sound']['raw_streaming']:
-                                path_sound_current = os.path.join(path_sound_base, "raw")
-                                self.path[str(characteristic.handle)] = path_sound_current
-                                os.makedirs(path_sound_current, exist_ok=True)
-                                await self.ble_client.start_notify(characteristic.uuid, partial(self._sound_notify_callback, self.dev))
-                    except Exception as e:
-                        print(e)
-                        pass
-                else:                  
-                    for characteristic in service.characteristics:
-                        try:
-                            path = os.getcwd()+"/data"
-
-                            uuid_split = characteristic.uuid.split("-")
-
-                            self.location = self.lookup['room'].get(uuid_split[1])
-                            self.type = self.lookup['device_type'].get(uuid_split[2])
-                            current_data_type = self.lookup['data_type'].get(uuid_split[3])
-
-                            path = os.path.join(path, self.location, self.type, self.address, current_data_type)
-                            
-                            self.path[str(characteristic.handle)] = path
-                            print(self.path[str(characteristic.handle)])
-                            os.makedirs(path, exist_ok=True)
-
-                            # Check data type
-                            if current_data_type == "SOUND":
-                                await self.ble_client.start_notify(characteristic.uuid, self._sound_notify_callback)
-                            else:
-                                await self.ble_client.start_notify(characteristic.uuid, self._data_notify_callback)
-
-                        except Exception as e:
-                            print(e)
-                            pass          
+            service = self.get_service_by_uuid(dean_uuid_dict['config']['service'])
+            if service is not None:
+                self.type = str(await self.ble_client.read_gatt_char(dean_uuid_dict['config']['device_type']), 'utf-8')
+                self.id = str(await self.ble_client.read_gatt_char(dean_uuid_dict['config']['device_name']), 'utf-8')
+                self.location = str(await self.ble_client.read_gatt_char(dean_uuid_dict['config']['location']), 'utf-8')
+            else:
+                if self.ble_client.is_connected:
+                    self.ble_client.disconnect()
+                self.remove()
+                return
 
         except Exception as e:
             print(e)
-            pass
+            if self.ble_client.is_connected:
+                self.ble_client.disconnect()
+            self.remove()
+            return
 
-        finally:
-            if not self.ble_client.is_connected:
-                self.remove()
+        data_path = os.path.join(os.getcwd()+"/data", self.location, self.type, self.address)
+            
+        for service in self.ble_client.services:
+            if service.uuid == dean_uuid_dict['config']['service']:
+                continue
+
+            current_data_type = dean_service_lookup.get(service.uuid, None)
+            if current_data_type == None:
+                continue
+
+            for characteristic in service.characteristics:
+                try:
+                    # uuid_split = characteristic.uuid.split("-")
+
+                    # self.location = self.lookup['room'].get(uuid_split[1])
+                    # self.type = self.lookup['device_type'].get(uuid_split[2])
+                    # current_data_type = self.lookup['data_type'].get(uuid_split[3])
+
+                    current_path = os.path.join(data_path, current_data_type)
+                    
+                    self.path[str(characteristic.handle)] = current_path
+                    print(self.path[str(characteristic.handle)])
+                    os.makedirs(current_path, exist_ok=True)
+
+                    # Check data type
+                    if current_data_type == "sound":
+                        await self.ble_client.start_notify(characteristic.uuid, self._sound_notify_callback)
+                    else:
+                        await self.ble_client.start_notify(characteristic.uuid, self._data_notify_callback)
+
+                except Exception as e:
+                    print(e)
+                    pass
+        
+        if not self.ble_client.is_connected:
+            self.remove()
     
     async def ble_client_start(self, disconnected_callback=None):
         await self._ble_worker(disconnected_callback)

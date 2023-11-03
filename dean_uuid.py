@@ -1,4 +1,4 @@
-adl_service_uuid = {
+dean_uuid_dict = {
     'base':                 '4eab0000-6bef-11ee-b962-10012002809a',
     'config': {
         'service':          '4eab0100-6bef-11ee-b962-10012002809a',
@@ -31,6 +31,16 @@ adl_service_uuid = {
         'env':              '4eab0000-ffff-0001-ff02-10012002809a',
         'aat':              '4eab0000-ffff-0001-ff03-10012002809a'
     }
+}
+
+dean_service_lookup = {
+    '4eab0000-6bef-11ee-b962-10012002809a' : 'base',
+    '4eab0100-6bef-11ee-b962-10012002809a' : 'config',
+    '4eab0000-ffff-0001-0002-10012002809a' : 'grideye',
+    '4eab0000-ffff-0003-0005-10012002809a' : 'aat',
+    '4eab0000-ffff-0001-0003-10012002809a' : 'environment',
+    '4eab0000-ffff-0001-0004-10012002809a' : 'sound',
+    '4eab0000-ffff-0001-ff00-10012002809a' : 'relay',
 }
 
 BLE_UUID_DEAN_BASE =                '4eab0000-6bef-11ee-b962-10012002809a'
