@@ -9,9 +9,6 @@ import time
 import struct
 import json
 
-import sound_process as snd
-import tensorflow_lite as tflite
-
 from dean_uuid import *
 
 class Device:
