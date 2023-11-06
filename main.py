@@ -25,9 +25,9 @@ async def scan():
     target_devices = []
     devices = await BleakScanner.discover(return_adv=True)
 
-    for dev in devices.keys():
-        if dean_uuid_dict['base'] in devices[dev][1].service_uuids:
-            target_devices.append(devices[dev][0])
+    for dev in devices.values():
+        if DEAN_UUID_BASE_SERVICE in dev[1].service_uuids:
+            target_devices.append(dev[0])
     return target_devices
 
 def disconnected_callback(client):

@@ -87,11 +87,11 @@ class Device:
         try:
             await self.ble_client.connect()
 
-            service = self.get_service_by_uuid(dean_uuid_dict['config']['service'])
+            service = self.get_service_by_uuid(DEAN_UUID_CONFIG_SERVICE)
             if service is not None:
-                self.type = str(await self.ble_client.read_gatt_char(dean_uuid_dict['config']['device_type']), 'utf-8')
-                self.id = str(await self.ble_client.read_gatt_char(dean_uuid_dict['config']['device_name']), 'utf-8')
-                self.location = str(await self.ble_client.read_gatt_char(dean_uuid_dict['config']['location']), 'utf-8')
+                self.type = str(await self.ble_client.read_gatt_char(DEAN_UUID_CONFIG_DEVICE_TYPE_CHAR), 'utf-8')
+                self.id = str(await self.ble_client.read_gatt_char(DEAN_UUID_CONFIG_DEVICE_NAME_CHAR), 'utf-8')
+                self.location = str(await self.ble_client.read_gatt_char(DEAN_UUID_CONFIG_LOCATION_CHAR), 'utf-8')
             else:
                 if self.ble_client.is_connected:
                     self.ble_client.disconnect()
@@ -108,7 +108,7 @@ class Device:
         data_path = os.path.join(os.getcwd()+"/data", self.location, self.type, self.address)
             
         for service in self.ble_client.services:
-            if service.uuid == dean_uuid_dict['config']['service']:
+            if service.uuid == DEAN_UUID_CONFIG_SERVICE:
                 continue
 
             current_data_type = dean_service_lookup.get(service.uuid, None)
