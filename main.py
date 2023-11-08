@@ -10,6 +10,7 @@ import json
 
 from process import *
 from device import Device
+from dean_uuid import *
 
 env_sound_model_path = 'models/cnn_12_f32.tflite'
 
@@ -22,13 +23,11 @@ log_process = LogProcess()
 
 async def scan():
     target_devices = []
-    devices = await BleakScanner.discover()
-    # print(devices)
-    # print(devices)
-    for dev in devices:
-        if dev.name.split("_")[0] == 'ADL':
-            # if dev.address=="DA:A1:DE:9D:DB:B1":
-                target_devices.append(dev)
+    devices = await BleakScanner.discover(return_adv=True)
+
+    for dev in devices.values():
+        if DEAN_UUID_BASE_SERVICE in dev[1].service_uuids:
+            target_devices.append(dev[0])
     return target_devices
 
 def disconnected_callback(client):
