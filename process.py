@@ -169,7 +169,11 @@ class SoundProcess(Process):
         window_hop = int((self.sound_unit_samples * self.sound_clip_length_sec)/2)
 
         while True:
-            address, received_time, path, data = self.queue.get()
+            address, received_time, data_type, path, data = self.queue.get()
+            if data_type == 'work':
+                self.data_collection_mode = False
+            elif data_type == 'raw':
+                self.data_collection_mode = True
 
             time_dt = datetime.fromtimestamp(received_time)
 
