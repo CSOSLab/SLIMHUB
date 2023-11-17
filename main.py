@@ -14,13 +14,6 @@ from dean_uuid import *
 
 env_sound_model_path = 'models/cnn_12_f32.tflite'
 
-sound_process = SoundProcess()
-sound_process.set_env_sound_interpreter(env_sound_model_path)
-
-data_process = DataProcess()
-
-log_process = LogProcess()
-
 async def scan():
     target_devices = []
     devices = await BleakScanner.discover(return_adv=True)
@@ -29,13 +22,6 @@ async def scan():
         if DEAN_UUID_BASE_SERVICE in dev[1].service_uuids:
             target_devices.append(dev[0])
     return target_devices
-
-def disconnected_callback(client):
-    print(f'Device {client.address} disconnected')
-    
-    device = Device.connected_devices.get(client.address, None)
-    if device is not None:
-        device.remove()
 
 async def ble_main():
     while True:
@@ -49,7 +35,10 @@ async def ble_main():
                     device.sound_queue = sound_process.get_queue()
                     device.data_queue = data_process.get_queue()
 
-                    await device.ble_client_start(disconnected_callback)
+                    await device.ble_client_start()
+                else:
+                    print(dev, "reconnected")
+                    await device.ble_client_start()
 
         except Exception as e:
             print(e)
@@ -57,10 +46,19 @@ async def ble_main():
 
         await asyncio.sleep(10.0)
 
+async def async_main():
+    ble_task = asyncio.create_task(ble_main())
+
+    await ble_task
+
 if __name__ == "__main__":
+    sound_process = SoundProcess()
+    data_process = DataProcess()
+    log_process = LogProcess()
+
+    sound_process.set_env_sound_interpreter(env_sound_model_path)
     sound_process.start()
     data_process.start()
     log_process.start()
 
-    print("Run Ble Main")
-    asyncio.run(ble_main())
+    asyncio.run(async_main())

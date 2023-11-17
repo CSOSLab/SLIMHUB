@@ -58,7 +58,7 @@ dean_uuid_dict = {
     'grideye': {
         'service':          DEAN_UUID_GRIDEYE_SERVICE,
         'work':             DEAN_UUID_GRIDEYE_PREDICTION_CHAR,
-        'raw':             DEAN_UUID_GRIDEYE_RAW_CHAR
+        'data':             DEAN_UUID_GRIDEYE_RAW_CHAR
     },
     'aat': {
         'service':          DEAN_UUID_AAT_SERVICE,
@@ -67,12 +67,12 @@ dean_uuid_dict = {
     'environment': {
         'service':          DEAN_UUID_ENVIRONMENT_SERVICE,
         'work':             DEAN_UUID_ENVIRONMENT_SEND_CHAR,
-        'raw':             DEAN_UUID_ENVIRONMENT_RESERVED_CHAR
+        'data':             DEAN_UUID_ENVIRONMENT_RESERVED_CHAR
     },
     'sound': {
         'service':          DEAN_UUID_SOUND_SERVICE,
         'work':             DEAN_UUID_SOUND_PROCESSED_CHAR,
-        'raw':             DEAN_UUID_SOUND_RAW_CHAR
+        'data':             DEAN_UUID_SOUND_RAW_CHAR
     },
     'relay': {
         'service':          DEAN_UUID_RELAY_SERVICE,
@@ -93,18 +93,18 @@ dean_service_lookup = {
 
     DEAN_UUID_GRIDEYE_SERVICE:              'grideye',
     DEAN_UUID_GRIDEYE_PREDICTION_CHAR:      'work',
-    DEAN_UUID_GRIDEYE_RAW_CHAR:             'raw',
+    DEAN_UUID_GRIDEYE_RAW_CHAR:             'data',
 
     DEAN_UUID_AAT_SERVICE:                  'aat',
     DEAN_UUID_AAT_ACTION_CHAR:              'work',
 
     DEAN_UUID_ENVIRONMENT_SERVICE:          'environment',
     DEAN_UUID_ENVIRONMENT_SEND_CHAR:        'work',
-    DEAN_UUID_ENVIRONMENT_RESERVED_CHAR:    'raw',
+    DEAN_UUID_ENVIRONMENT_RESERVED_CHAR:    'data',
 
     DEAN_UUID_SOUND_SERVICE:                'sound',
     DEAN_UUID_SOUND_PROCESSED_CHAR:         'work',
-    DEAN_UUID_SOUND_RAW_CHAR:               'raw',
+    DEAN_UUID_SOUND_RAW_CHAR:               'data',
 
     DEAN_UUID_RELAY_SERVICE:                'relay',
 }

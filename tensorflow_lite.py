@@ -10,7 +10,7 @@ def set_interpreter(model_path):
     input_details = tflite_interpreter.get_input_details()[0]
     output_details = tflite_interpreter.get_output_details()[0]
 
-    print("TFLite tensor allocated")
+    # print("TFLite tensor allocated")
 
     # print("== Input details ==")
     # print("name:", input_details['name'])
