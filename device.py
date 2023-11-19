@@ -16,11 +16,11 @@ class Device:
     connected_devices = {}
 
     # work: Working mode, data: Collection mode, both: Both
-    mode_default = {
-        'grideye': 'work',
-        'aat': 'work',
-        'environment': 'work',
-        'sound': 'work',
+    enable_default = {
+        'grideye': ['prediction'],
+        'aat': ['action'],
+        'environment': ['send'],
+        'sound': ['processed'],
     }
 
     def __init__(self, dev):
@@ -41,7 +41,7 @@ class Device:
 
         self.user_in = False
 
-        self.mode = Device.mode_default
+        self.enable = Device.enable_default
     
     def remove(self):
         self.connected_devices.pop(self.address)
@@ -86,31 +86,22 @@ class Device:
             return self.get_service_by_uuid(uuid_dict['service'])
         return None
     
-    def set_service_mode(self, service_name, mode):
-        if mode not in ['work', 'data']:
-            print("invalid mode")
-            return
-        current_mode = self.mode.get(service_name, None)
-        if current_mode != None:
-            current_mode[service_name] = mode
-        else:
-            print("invalid service")
-    
     async def activate_service(self, service):
-        current_service = dean_service_lookup[service.uuid]
+        service_name = dean_service_lookup[service.uuid]
         char_list = []
         for characteristic in service.characteristics:
             char_list.append(characteristic.uuid)
         
-        current_mode = self.mode.get(current_service, None)
-        if current_mode != None:
-            try:
-                if dean_uuid_dict[current_service][current_mode] in char_list:
-                    print('Start notification: '+current_service+':'+current_mode)
-                    await self.ble_client.start_notify(dean_uuid_dict[current_service][current_mode], self._ble_notify_callback)
-            except Exception as e:
-                print(e)
-                return
+        enable_list = self.enable.get(service_name, None)
+        if enable_list != None:
+            for char in enable_list:
+                try:
+                    if dean_uuid_dict[service_name][char] in char_list:
+                        print('Start notification: '+service_name+':'+char)
+                        await self.ble_client.start_notify(dean_uuid_dict[service_name][char], self._ble_notify_callback)
+                except Exception as e:
+                    print(e)
+                    pass
     
     async def deactivate_service(self, service):
         for characteristic in service.characteristics:
@@ -163,8 +154,8 @@ class Device:
 
             service = self.get_service_by_uuid(DEAN_UUID_CONFIG_SERVICE)
             if service is not None:
-                self.type = str(await self.ble_client.read_gatt_char(DEAN_UUID_CONFIG_DEVICE_TYPE_CHAR), 'utf-8')
-                self.id = str(await self.ble_client.read_gatt_char(DEAN_UUID_CONFIG_DEVICE_NAME_CHAR), 'utf-8')
+                self.type = str(await self.ble_client.read_gatt_char(DEAN_UUID_CONFIG_TYPE_CHAR), 'utf-8')
+                self.id = str(await self.ble_client.read_gatt_char(DEAN_UUID_CONFIG_ID_CHAR), 'utf-8')
                 self.location = str(await self.ble_client.read_gatt_char(DEAN_UUID_CONFIG_LOCATION_CHAR), 'utf-8')
             else:
                 if self.ble_client.is_connected:

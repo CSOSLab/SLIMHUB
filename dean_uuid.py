@@ -3,8 +3,8 @@ DEAN_UUID_BASE_SERVICE =                '4eab0000-6bef-11ee-b962-10012002809a'
 
 # Device Configuration Service
 DEAN_UUID_CONFIG_SERVICE =              '4eab0100-6bef-11ee-b962-10012002809a'
-DEAN_UUID_CONFIG_DEVICE_TYPE_CHAR =     '4eab0101-6bef-11ee-b962-10012002809a'
-DEAN_UUID_CONFIG_DEVICE_NAME_CHAR =     '4eab0102-6bef-11ee-b962-10012002809a'
+DEAN_UUID_CONFIG_TYPE_CHAR =            '4eab0101-6bef-11ee-b962-10012002809a'
+DEAN_UUID_CONFIG_ID_CHAR =              '4eab0102-6bef-11ee-b962-10012002809a'
 DEAN_UUID_CONFIG_LOCATION_CHAR =        '4eab0103-6bef-11ee-b962-10012002809a'
 
 # GridEye Service
@@ -51,28 +51,28 @@ dean_uuid_dict = {
     },
     'config': {
         'service':          DEAN_UUID_CONFIG_SERVICE,
-        'device_type':      DEAN_UUID_CONFIG_DEVICE_TYPE_CHAR,
-        'device_name':      DEAN_UUID_CONFIG_DEVICE_NAME_CHAR,
+        'type':             DEAN_UUID_CONFIG_TYPE_CHAR,
+        'id':               DEAN_UUID_CONFIG_ID_CHAR,
         'location':         DEAN_UUID_CONFIG_LOCATION_CHAR
     },
     'grideye': {
         'service':          DEAN_UUID_GRIDEYE_SERVICE,
-        'work':             DEAN_UUID_GRIDEYE_PREDICTION_CHAR,
-        'data':             DEAN_UUID_GRIDEYE_RAW_CHAR
+        'prediction':       DEAN_UUID_GRIDEYE_PREDICTION_CHAR,
+        'raw':              DEAN_UUID_GRIDEYE_RAW_CHAR
     },
     'aat': {
         'service':          DEAN_UUID_AAT_SERVICE,
-        'work':             DEAN_UUID_AAT_ACTION_CHAR
+        'action':           DEAN_UUID_AAT_ACTION_CHAR
     },
     'environment': {
         'service':          DEAN_UUID_ENVIRONMENT_SERVICE,
-        'work':             DEAN_UUID_ENVIRONMENT_SEND_CHAR,
-        'data':             DEAN_UUID_ENVIRONMENT_RESERVED_CHAR
+        'send':             DEAN_UUID_ENVIRONMENT_SEND_CHAR,
+        'reserved':         DEAN_UUID_ENVIRONMENT_RESERVED_CHAR
     },
     'sound': {
         'service':          DEAN_UUID_SOUND_SERVICE,
-        'work':             DEAN_UUID_SOUND_PROCESSED_CHAR,
-        'data':             DEAN_UUID_SOUND_RAW_CHAR
+        'processed':        DEAN_UUID_SOUND_PROCESSED_CHAR,
+        'raw':              DEAN_UUID_SOUND_RAW_CHAR
     },
     'relay': {
         'service':          DEAN_UUID_RELAY_SERVICE,
@@ -87,24 +87,24 @@ dean_service_lookup = {
     DEAN_UUID_BASE_SERVICE:                 'base',
     
     DEAN_UUID_CONFIG_SERVICE:               'config',
-    DEAN_UUID_CONFIG_DEVICE_TYPE_CHAR:      'type',
-    DEAN_UUID_CONFIG_DEVICE_NAME_CHAR:      'id',
+    DEAN_UUID_CONFIG_TYPE_CHAR:             'type',
+    DEAN_UUID_CONFIG_ID_CHAR:               'id',
     DEAN_UUID_CONFIG_LOCATION_CHAR:         'location',
 
     DEAN_UUID_GRIDEYE_SERVICE:              'grideye',
-    DEAN_UUID_GRIDEYE_PREDICTION_CHAR:      'work',
-    DEAN_UUID_GRIDEYE_RAW_CHAR:             'data',
+    DEAN_UUID_GRIDEYE_PREDICTION_CHAR:      'prediction',
+    DEAN_UUID_GRIDEYE_RAW_CHAR:             'raw',
 
     DEAN_UUID_AAT_SERVICE:                  'aat',
-    DEAN_UUID_AAT_ACTION_CHAR:              'work',
+    DEAN_UUID_AAT_ACTION_CHAR:              'action',
 
     DEAN_UUID_ENVIRONMENT_SERVICE:          'environment',
-    DEAN_UUID_ENVIRONMENT_SEND_CHAR:        'work',
-    DEAN_UUID_ENVIRONMENT_RESERVED_CHAR:    'data',
+    DEAN_UUID_ENVIRONMENT_SEND_CHAR:        'send',
+    DEAN_UUID_ENVIRONMENT_RESERVED_CHAR:    'reserved',
 
     DEAN_UUID_SOUND_SERVICE:                'sound',
-    DEAN_UUID_SOUND_PROCESSED_CHAR:         'work',
-    DEAN_UUID_SOUND_RAW_CHAR:               'data',
+    DEAN_UUID_SOUND_PROCESSED_CHAR:         'processed',
+    DEAN_UUID_SOUND_RAW_CHAR:               'raw',
 
     DEAN_UUID_RELAY_SERVICE:                'relay',
 }
