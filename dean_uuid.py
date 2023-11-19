@@ -3,8 +3,7 @@ DEAN_UUID_BASE_SERVICE =                '4eab0000-6bef-11ee-b962-10012002809a'
 
 # Device Configuration Service
 DEAN_UUID_CONFIG_SERVICE =              '4eab0100-6bef-11ee-b962-10012002809a'
-DEAN_UUID_CONFIG_TYPE_CHAR =            '4eab0101-6bef-11ee-b962-10012002809a'
-DEAN_UUID_CONFIG_ID_CHAR =              '4eab0102-6bef-11ee-b962-10012002809a'
+DEAN_UUID_CONFIG_NAME_CHAR =            '4eab0102-6bef-11ee-b962-10012002809a'
 DEAN_UUID_CONFIG_LOCATION_CHAR =        '4eab0103-6bef-11ee-b962-10012002809a'
 
 # GridEye Service
@@ -45,14 +44,13 @@ else:
     DEAN_UUID_PAAR_RX_CHAR =            '6e407f02-b5a3-f393-e0a9-e50e24dcca9e'
 
 
-dean_uuid_dict = {
+dean_service_dict = {
     'base': {
         'service':          DEAN_UUID_BASE_SERVICE,
     },
     'config': {
         'service':          DEAN_UUID_CONFIG_SERVICE,
-        'type':             DEAN_UUID_CONFIG_TYPE_CHAR,
-        'id':               DEAN_UUID_CONFIG_ID_CHAR,
+        'name':             DEAN_UUID_CONFIG_NAME_CHAR,
         'location':         DEAN_UUID_CONFIG_LOCATION_CHAR
     },
     'grideye': {
@@ -88,7 +86,7 @@ dean_service_lookup = {
     
     DEAN_UUID_CONFIG_SERVICE:               'config',
     DEAN_UUID_CONFIG_TYPE_CHAR:             'type',
-    DEAN_UUID_CONFIG_ID_CHAR:               'id',
+    DEAN_UUID_CONFIG_NAME_CHAR:             'name',
     DEAN_UUID_CONFIG_LOCATION_CHAR:         'location',
 
     DEAN_UUID_GRIDEYE_SERVICE:              'grideye',

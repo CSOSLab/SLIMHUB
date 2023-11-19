@@ -15,7 +15,6 @@ from dean_uuid import *
 class Device:
     connected_devices = {}
 
-    # work: Working mode, data: Collection mode, both: Both
     enable_default = {
         'grideye': ['prediction'],
         'aat': ['action'],
@@ -26,12 +25,13 @@ class Device:
     def __init__(self, dev):
         self.connected_devices[dev.address] = self
         
-        self.name = dev.name
-        self.address = dev.address
-        self.id = ''
-        self.type = '' 
-        self.location = ''
-        
+        self.config_dict = {
+            'address': dev.address,
+            'type': dev.name,
+            'name': '',
+            'location': '',
+        }
+
         self.path = {}
 
         self.ble_client = None
@@ -44,7 +44,7 @@ class Device:
         self.enable = Device.enable_default
     
     def remove(self):
-        self.connected_devices.pop(self.address)
+        self.connected_devices.pop(self.config_dict['address'])
         del self
 
     def check_room_status(self, data):
@@ -61,14 +61,14 @@ class Device:
 
         if dean_service_lookup[sender.service_uuid] == 'sound':
             if not self.sound_queue.full():
-                self.sound_queue.put([self.address, received_time, data_type, self.path[str(sender.handle)], data])
+                self.sound_queue.put([self.config_dict['address'], received_time, data_type, self.path[str(sender.handle)], data])
         elif dean_service_lookup[sender.service_uuid] == 'grideye':
             self.check_room_status(data)
             if not self.data_queue.full():
-                self.data_queue.put([self.address, received_time, self.path[str(sender.handle)], data])
+                self.data_queue.put([self.config_dict['address'], received_time, self.path[str(sender.handle)], data])
         else:
             if not self.data_queue.full():
-                self.data_queue.put([self.address, received_time, self.path[str(sender.handle)], data])
+                self.data_queue.put([self.config_dict['address'], received_time, self.path[str(sender.handle)], data])
     
     def _ble_disconnected_callback(self, client):
         print(f'Device {client.address} disconnected')
@@ -81,42 +81,59 @@ class Device:
         return None
     
     def get_service_by_name(self, service_name):
-        uuid_dict = dean_uuid_dict.get(service_name, None)
-        if uuid_dict != None:
-            return self.get_service_by_uuid(uuid_dict['service'])
+        char_dict = dean_service_dict.get(service_name, None)
+        if char_dict != None:
+            return self.get_service_by_uuid(char_dict['service'])
         return None
     
-    async def activate_service(self, service):
-        service_name = dean_service_lookup[service.uuid]
+    async def activate_characteristic(self, service_name, char_name):
+        service = self.get_service_by_name(service_name)
+        if service is not None:
+            char_dict = dean_service_dict.get(service_name)
+            char_uuid = char_dict.get(char_name, None)
+            if char_uuid is not None:
+                print('Start notification: '+service_name+':'+char_name)
+                try:
+                    await self.ble_client.start_notify(char_uuid, self._ble_notify_callback)
+                except:
+                    print(service_name, char_name, 'activation failed')
+                    return 
+    
+    async def deactivate_characteristic(self, service_name, char_name):
+        service = self.get_service_by_name(service_name)
+        if service is not None:
+            char_dict = dean_service_dict.get(service_name)
+            char_uuid = char_dict.get(char_name, None)
+            if char_uuid is not None:
+                await self.ble_client.stop_notify(char_uuid, self._ble_notify_callback)
+
+    async def activate_service(self, service_name):
+        service = self.get_service_by_name(service_name)
         char_list = []
         for characteristic in service.characteristics:
             char_list.append(characteristic.uuid)
         
         enable_list = self.enable.get(service_name, None)
         if enable_list != None:
-            for char in enable_list:
-                try:
-                    if dean_uuid_dict[service_name][char] in char_list:
-                        print('Start notification: '+service_name+':'+char)
-                        await self.ble_client.start_notify(dean_uuid_dict[service_name][char], self._ble_notify_callback)
-                except Exception as e:
-                    print(e)
-                    pass
+            for char_name in enable_list:
+                await self.activate_characteristic(service_name, char_name)
     
-    async def deactivate_service(self, service):
+    async def deactivate_service(self, service_name):
+        service = self.get_service_by_name(service_name)
         for characteristic in service.characteristics:
-            current_char = dean_service_lookup.get(characteristic.uuid, None)
-            if current_char == None:
+            char_name = dean_service_lookup.get(characteristic.uuid, None)
+            if char_name == None:
                 continue
             try:
                 await self.ble_client.stop_notify(characteristic.uuid)
             except:
                 pass
 
-    async def init_service(self, service):
-        data_path = os.path.join(os.getcwd()+"/data", self.location, self.type, self.address)
+    async def init_service(self, service_name):
+        data_path = os.path.join(os.getcwd()+"/data", self.config_dict['location'], self.config_dict['type'], self.config_dict['address'])
 
-        service_name = dean_service_lookup.get(service.uuid, None)
+        service = self.get_service_by_name(service_name)
+
         if service_name == None:
             return
         
@@ -136,27 +153,26 @@ class Device:
                 print(e)
                 pass
 
-        await self.activate_service(service)
+        await self.activate_service(service_name)
 
     async def init_all_services(self):
         for service in self.ble_client.services:
             if service.uuid == DEAN_UUID_CONFIG_SERVICE:
                 continue
 
-            await self.init_service(service)
+            service_name = dean_service_lookup.get(service.uuid, None)
 
-    async def _ble_worker(self):
-        self.ble_client = BleakClient(self.address, disconnected_callback=self._ble_disconnected_callback)
+            await self.init_service(service_name)
 
-        # Connect and read device info
+    async def _connect_device(self):
+         # Connect and read device info
         try:
             await self.ble_client.connect()
 
             service = self.get_service_by_uuid(DEAN_UUID_CONFIG_SERVICE)
             if service is not None:
-                self.type = str(await self.ble_client.read_gatt_char(DEAN_UUID_CONFIG_TYPE_CHAR), 'utf-8')
-                self.id = str(await self.ble_client.read_gatt_char(DEAN_UUID_CONFIG_ID_CHAR), 'utf-8')
-                self.location = str(await self.ble_client.read_gatt_char(DEAN_UUID_CONFIG_LOCATION_CHAR), 'utf-8')
+                self.config_dict['name'] = str(await self.ble_client.read_gatt_char(DEAN_UUID_CONFIG_NAME_CHAR), 'utf-8')
+                self.config_dict['location'] = str(await self.ble_client.read_gatt_char(DEAN_UUID_CONFIG_LOCATION_CHAR), 'utf-8')
             else:
                 if self.ble_client.is_connected:
                     self.ble_client.disconnect()
@@ -169,7 +185,11 @@ class Device:
                 self.ble_client.disconnect()
             self.remove()
             return            
-        
+
+    async def _ble_worker(self):
+        self.ble_client = BleakClient(self.config_dict['address'], disconnected_callback=self._ble_disconnected_callback)
+
+        await self._connect_device()
         await self.init_all_services()
     
     async def ble_client_start(self):

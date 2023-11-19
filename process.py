@@ -29,6 +29,10 @@ class Process:
     def start(self):
         self.process.start()
     
+    def stop(self):
+        self.process.terminate()
+        del self.queue
+    
 class SoundProcess(Process):
     DEFAULT_SAMPLE_RATE = 16000
     DEFAULT_UNIT_SAMPLES = 16384
