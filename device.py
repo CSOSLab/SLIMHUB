@@ -19,7 +19,7 @@ class Device:
         'grideye': ['prediction'],
         'aat': ['action'],
         'environment': ['send'],
-        'sound': ['processed'],
+        'sound': ['raw'],
     }
 
     def __init__(self, dev):
@@ -190,7 +190,7 @@ class Device:
                 continue
             char_list.append(characteristic.uuid)
             try:
-                current_path = os.path.join(data_path, service_name, current_char)
+                current_path = os.path.join(data_path, service_name)
                 
                 self.path[str(characteristic.handle)] = current_path
                 os.makedirs(current_path, exist_ok=True)

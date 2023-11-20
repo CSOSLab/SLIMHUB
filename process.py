@@ -174,7 +174,7 @@ class SoundProcess(Process):
 
         while True:
             address, received_time, data_type, path, data = self.queue.get()
-            if data_type == 'work':
+            if data_type == 'processed':
                 self.data_collection_mode = False
             elif data_type == 'raw':
                 self.data_collection_mode = True
@@ -190,10 +190,10 @@ class SoundProcess(Process):
             byte_path = os.path.join(path,"bytes",str(time_dt.strftime("%Y-%m-%d")))
             
             os.makedirs(os.path.join(path,"logs"), exist_ok=True)
-            os.makedirs(os.path.join(path,"raw"), exist_ok=True)
+            os.makedirs(os.path.join(path,"predictions"), exist_ok=True)
 
             f_logs = open(os.path.join(path,"logs",str(time_dt.strftime("%Y-%m-%d_%H"))+".txt"), 'a')
-            f_raw = open(os.path.join(path,"raw",str(time_dt.strftime("%Y-%m-%d_%H"))+".txt"), 'a')
+            f_raw = open(os.path.join(path,"predictions",str(time_dt.strftime("%Y-%m-%d_%H"))+".txt"), 'a')
             
             if self.data_collection_mode:
                 # Mic stop trigger packet: save wav and clear buffer

@@ -2,6 +2,9 @@ import numpy as np
 
 import os
 import soundfile as sf
+import argparse
+import sys
+import glob
 
 class Decoder:
     DEFAULT_CHUNK_SIZE = 259
@@ -91,3 +94,30 @@ class Decoder:
                 pcm.extend(pcm_frame)
         
         return pcm
+
+def save_wav(data, file_dir):
+    sf.write(file_dir[:-4]+'.wav', data, 16000, 'PCM_16')
+
+if __name__ == "__main__":
+    decoder = Decoder()
+    parser = argparse.ArgumentParser(description="ADPCM Decoder")
+    parser.add_argument('-f', '--file', nargs=1)
+    parser.add_argument('-d', '--dir', nargs=1)
+
+    if len(sys.argv)==1:
+        parser.print_help(sys.stderr)
+        sys.exit(1)
+
+    args = parser.parse_args()
+
+    if args.file:
+        file_dir = str(args.file[0])
+        data = decoder.decode_file(file_dir)
+        save_wav(data, file_dir)
+
+    if args.dir:
+        dir_path = str(args.dir[0])
+        files = glob.glob(dir_path+'/*')
+        for file in files:
+            data = decoder.decode_file(file)
+            save_wav(data, file)

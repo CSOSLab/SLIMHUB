@@ -76,11 +76,21 @@ async def cli_server():
     while True:
         sl = select.select([s], [], [], 0.1)
         if len(sl[0]) > 0:
-            s2, peer = s.accept()
-            data = eval(read(s2))
+            conn, addr = s.accept()
+            data = eval(read(conn))
             print(data)
         await asyncio.sleep(0.5)
 
+def send_command(cmd, args_dict):
+    s = socket.socket(socket.AF_INET)
+    try:
+        s.connect((host, port))
+    except:
+        print("Slimhub client is not running")
+        sys.exit(1)
+    args_dict[cmd].insert(0, cmd)
+    s.send(str(args_dict[cmd]).encode())
+    
 async def async_main():
     ble_task = asyncio.create_task(ble_main())
     manager_task = asyncio.create_task(cli_server())
@@ -90,14 +100,15 @@ async def async_main():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Slimhub service")
-    parser.add_argument('-m', '--msg', nargs=3)
     parser.add_argument('-s', '--start', action='store_true', help='main start')
+    parser.add_argument('-m', '--msg', nargs=3, help='Message test')
 
     if len(sys.argv)==1:
         parser.print_help(sys.stderr)
         sys.exit(1)
 
     args = parser.parse_args()
+    args_dict = vars(args)
 
     if args.start:
         sound_process.set_env_sound_interpreter(env_sound_model_path)
@@ -108,10 +119,4 @@ if __name__ == "__main__":
         asyncio.run(async_main())
     
     if args.msg:
-        s = socket.socket(socket.AF_INET)
-        try:
-            s.connect((host, port))
-        except:
-            print("Slimhub client is not running")
-            sys.exit(1)
-        s.send(str(args.msg).encode())
+        send_command('msg', args_dict)
