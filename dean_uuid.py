@@ -85,7 +85,6 @@ dean_service_lookup = {
     DEAN_UUID_BASE_SERVICE:                 'base',
     
     DEAN_UUID_CONFIG_SERVICE:               'config',
-    DEAN_UUID_CONFIG_TYPE_CHAR:             'type',
     DEAN_UUID_CONFIG_NAME_CHAR:             'name',
     DEAN_UUID_CONFIG_LOCATION_CHAR:         'location',
 

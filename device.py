@@ -86,6 +86,52 @@ class Device:
             return self.get_service_by_uuid(char_dict['service'])
         return None
     
+    async def config_device(self, target, data):
+        config_path = os.getcwd()+"/config"
+        os.makedirs(config_path, exist_ok=True)
+
+        file_path = os.path.join(config_path, self.config_dict['address']+'.json')
+        if target in self.config_dict:
+            self.config_dict[target] = data
+        else:
+            return
+        
+        char_uuid = dean_service_dict['config'][target]
+        with open(file_path, 'w') as save:
+            json.dump(self.config_dict, save, indent=4)
+        await self.ble_client.write_gatt_char(char_uuid, bytearray(data, 'utf-8'))
+
+    async def load_config(self):
+        config_path = os.getcwd()+"/config"
+        os.makedirs(config_path, exist_ok=True)
+
+        file_path = os.path.join(config_path, self.config_dict['address']+'.json')
+        if os.path.isfile(file_path):
+            with open(file_path) as f:
+                json_data = json.load(f)
+                self.config_dict['name'] = json_data['name']
+                self.config_dict['location'] = json_data['location']
+            try:
+                await self.ble_client.write_gatt_char(DEAN_UUID_CONFIG_NAME_CHAR, bytearray(self.config_dict['name'], 'utf-8'))
+            except:
+                pass
+            try:
+                await self.ble_client.write_gatt_char(DEAN_UUID_CONFIG_LOCATION_CHAR, bytearray(self.config_dict['location'], 'utf-8'))
+            except: 
+                pass
+
+            return True
+        else:
+            return False
+    
+    def save_config(self):
+        config_path = os.getcwd()+"/config"
+        os.makedirs(config_path, exist_ok=True)
+
+        file_path = os.path.join(config_path, self.config_dict['address']+'.json')
+        with open(file_path, 'w') as save:
+            json.dump(self.config_dict, save, indent=4)
+            
     async def activate_characteristic(self, service_name, char_name):
         service = self.get_service_by_name(service_name)
         if service is not None:
@@ -170,21 +216,25 @@ class Device:
             await self.ble_client.connect()
 
             service = self.get_service_by_uuid(DEAN_UUID_CONFIG_SERVICE)
-            if service is not None:
-                self.config_dict['name'] = str(await self.ble_client.read_gatt_char(DEAN_UUID_CONFIG_NAME_CHAR), 'utf-8')
-                self.config_dict['location'] = str(await self.ble_client.read_gatt_char(DEAN_UUID_CONFIG_LOCATION_CHAR), 'utf-8')
-            else:
-                if self.ble_client.is_connected:
-                    self.ble_client.disconnect()
-                self.remove()
-                return
+
+            if not await self.load_config():
+                if service is not None:
+                    self.config_dict['name'] = str(await self.ble_client.read_gatt_char(DEAN_UUID_CONFIG_NAME_CHAR), 'utf-8')
+                    self.config_dict['location'] = str(await self.ble_client.read_gatt_char(DEAN_UUID_CONFIG_LOCATION_CHAR), 'utf-8')
+                    self.save_config()
+
+                else:
+                    if self.ble_client.is_connected:
+                        self.ble_client.disconnect()
+                    self.remove()
+                    return
 
         except Exception as e:
             print(e)
             if self.ble_client.is_connected:
                 self.ble_client.disconnect()
             self.remove()
-            return            
+            return
 
     async def _ble_worker(self):
         self.ble_client = BleakClient(self.config_dict['address'], disconnected_callback=self._ble_disconnected_callback)
