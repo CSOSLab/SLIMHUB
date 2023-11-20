@@ -31,7 +31,6 @@ class Process:
     
     def stop(self):
         self.process.terminate()
-        del self.queue
     
 class SoundProcess(Process):
     DEFAULT_SAMPLE_RATE = 16000

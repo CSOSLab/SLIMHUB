@@ -12,9 +12,9 @@ import struct
 
 from dean_uuid import *
 
-class Device:
-    connected_devices = {}
+connected_devices = {}
 
+class Device:
     enable_default = {
         'grideye': ['prediction'],
         'aat': ['action'],
@@ -23,7 +23,7 @@ class Device:
     }
 
     def __init__(self, dev):
-        self.connected_devices[dev.address] = self
+        connected_devices[dev.address] = self
         
         self.config_dict = {
             'address': dev.address,
@@ -42,13 +42,18 @@ class Device:
         self.user_in = False
 
         self.enable = Device.enable_default
+
+        self.is_connected = False
+    
+    def __repr__(self):
+        return f"<{self.config_dict['address']}, {self.config_dict['type']}, {self.config_dict['name']}, {self.config_dict['location']}, {self.is_connected}>"
     
     def remove(self):
-        self.connected_devices.pop(self.config_dict['address'])
+        connected_devices.pop(self.config_dict['address'])
         del self
 
     def get_device_by_address(address):
-        return Device.connected_devices.get(address, None)
+        return connected_devices.get(address, None)
         
     def check_room_status(self, data):
         # grideye analysis
@@ -75,6 +80,7 @@ class Device:
     
     def _ble_disconnected_callback(self, client):
         print(f'Device {client.address} disconnected')
+        self.is_connected = False
         # self.remove()
 
     def get_service_by_uuid(self, service_uuid):
@@ -141,20 +147,24 @@ class Device:
             char_dict = dean_service_dict.get(service_name)
             char_uuid = char_dict.get(char_name, None)
             if char_uuid is not None:
-                print('Start notification: '+service_name+':'+char_name)
                 try:
                     await self.ble_client.start_notify(char_uuid, self._ble_notify_callback)
+                    print('Characteristic:', service_name, char_name, 'enabled')
                 except:
-                    print(service_name, char_name, 'activation failed')
+                    print('Characteristic:', service_name, char_name, 'activation failed')
                     return 
-    
+
     async def deactivate_characteristic(self, service_name, char_name):
         service = self.get_service_by_name(service_name)
         if service is not None:
             char_dict = dean_service_dict.get(service_name)
             char_uuid = char_dict.get(char_name, None)
             if char_uuid is not None:
-                await self.ble_client.stop_notify(char_uuid, self._ble_notify_callback)
+                try:
+                    await self.ble_client.stop_notify(char_uuid)
+                    print('Characteristic:', service_name, char_name, 'disabled')
+                except:
+                    print('Characteristic:', service_name, char_name, 'deactivation failed')
 
     async def activate_service(self, service_name):
         service = self.get_service_by_name(service_name)
@@ -166,7 +176,7 @@ class Device:
         if enable_list != None:
             for char_name in enable_list:
                 await self.activate_characteristic(service_name, char_name)
-    
+
     async def deactivate_service(self, service_name):
         service = self.get_service_by_name(service_name)
         for characteristic in service.characteristics:
@@ -243,6 +253,8 @@ class Device:
         self.ble_client = BleakClient(self.config_dict['address'], disconnected_callback=self._ble_disconnected_callback)
 
         await self._connect_device()
+        self.is_connected = True
+
         await self.init_all_services()
     
     async def ble_client_start(self):
@@ -251,11 +263,24 @@ class Device:
 class DeviceManager:
     async def manage(self, commands):
         cmd = commands[0]
-        address = commands[1]
-        device = Device.get_device_by_address(address)
-        if device is None:
-            return
+        if len(commands) > 1:
+            address = commands[1]
+            device = Device.get_device_by_address(address)
+
+            if device is None:
+                return
 
         if cmd == 'config':
             await device.config_device(commands[2], commands[3])
             print(device.config_dict)
+
+        elif cmd == 'service':
+            if commands[2] == 'enable':
+                await device.activate_characteristic(commands[3], commands[4])
+            elif commands[2] == 'disable':
+                await device.deactivate_characteristic(commands[3], commands[4])
+            else:
+                print("Type enable/disable")
+        
+        elif cmd == 'list':
+            print(connected_devices)

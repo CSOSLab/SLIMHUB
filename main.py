@@ -27,6 +27,16 @@ log_process = LogProcess()
 
 manager = DeviceManager()
 
+def system_quit():
+    sound_process.stop()
+    data_process.stop()
+    log_process.stop()
+    sound_process.process.join()
+    data_process.process.join()
+    log_process.process.join()
+
+    sys.exit(1)
+    
 async def ble_main():
     async def scan():
         target_devices = []
@@ -81,6 +91,9 @@ async def cli_server():
             conn, addr = s.accept()
             data = eval(read(conn))
 
+            if data[0] == 'quit':
+                system_quit()
+                
             await manager.manage(data)
             
         await asyncio.sleep(0.5)
@@ -92,8 +105,11 @@ def send_command(cmd, args_dict):
     except:
         print("Slimhub client is not running")
         sys.exit(1)
-    args_dict[cmd].insert(0, cmd)
-    s.send(str(args_dict[cmd]).encode())
+    if type(args_dict[cmd]) == bool:
+        s.send(str([cmd]).encode())
+    elif type(args_dict[cmd]) == list:
+        args_dict[cmd].insert(0, cmd)
+        s.send(str(args_dict[cmd]).encode())
     
 async def async_main():
     ble_task = asyncio.create_task(ble_main())
@@ -102,10 +118,15 @@ async def async_main():
     await ble_task
     await manager_task
 
+    return
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Slimhub service")
-    parser.add_argument('-s', '--start', action='store_true', help='main start')
+    parser.add_argument('-r', '--run', action='store_true', help='main start')
     parser.add_argument('-c', '--config', nargs=3, help='config device')
+    parser.add_argument('-s', '--service', nargs=4, help='Manage characteristic notification')
+    parser.add_argument('-l', '--list', action='store_true', help='List connected devices')
+    parser.add_argument('-q', '--quit', action='store_true')
 
     if len(sys.argv)==1:
         parser.print_help(sys.stderr)
@@ -113,9 +134,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     args_dict = vars(args)
-    print(args_dict)
 
-    if args.start:
+    if args.run:
         sound_process.set_env_sound_interpreter(env_sound_model_path)
         sound_process.start()
         data_process.start()
@@ -125,3 +145,12 @@ if __name__ == "__main__":
     
     if args.config:
         send_command('config', args_dict)
+    
+    if args.service:
+        send_command('service', args_dict)
+
+    if args.list:
+        send_command('list', args_dict)
+
+    if args.quit:
+        send_command('quit', args_dict)
