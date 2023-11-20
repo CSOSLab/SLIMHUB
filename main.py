@@ -14,7 +14,7 @@ from threading import Thread
 from multiprocessing import Manager
 
 from process import *
-from device import Device
+from device import Device, DeviceManager
 from dean_uuid import *
 
 host = 'localhost'
@@ -24,6 +24,8 @@ env_sound_model_path = 'models/cnn_12_f32.tflite'
 sound_process = SoundProcess()
 data_process = DataProcess()
 log_process = LogProcess()
+
+manager = DeviceManager()
 
 async def ble_main():
     async def scan():
@@ -40,7 +42,7 @@ async def ble_main():
         try:
             target_devices = await scan()
             for dev in target_devices:
-                if Device.connected_devices.get(dev.address, None) is None:
+                if Device.get_device_by_address(dev.address) is None:
                     print(dev, "found")
 
                     device = Device(dev)
@@ -78,7 +80,9 @@ async def cli_server():
         if len(sl[0]) > 0:
             conn, addr = s.accept()
             data = eval(read(conn))
-            print(data)
+
+            await manager.manage(data)
+            
         await asyncio.sleep(0.5)
 
 def send_command(cmd, args_dict):
@@ -101,7 +105,7 @@ async def async_main():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Slimhub service")
     parser.add_argument('-s', '--start', action='store_true', help='main start')
-    parser.add_argument('-m', '--msg', nargs=3, help='Message test')
+    parser.add_argument('-c', '--config', nargs=3, help='config device')
 
     if len(sys.argv)==1:
         parser.print_help(sys.stderr)
@@ -109,6 +113,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     args_dict = vars(args)
+    print(args_dict)
 
     if args.start:
         sound_process.set_env_sound_interpreter(env_sound_model_path)
@@ -118,5 +123,5 @@ if __name__ == "__main__":
 
         asyncio.run(async_main())
     
-    if args.msg:
-        send_command('msg', args_dict)
+    if args.config:
+        send_command('config', args_dict)

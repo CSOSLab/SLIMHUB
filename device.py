@@ -47,6 +47,9 @@ class Device:
         self.connected_devices.pop(self.config_dict['address'])
         del self
 
+    def get_device_by_address(address):
+        return Device.connected_devices.get(address, None)
+        
     def check_room_status(self, data):
         # grideye analysis
         # set active when people comes in
@@ -244,3 +247,15 @@ class Device:
     
     async def ble_client_start(self):
         await self._ble_worker()
+
+class DeviceManager:
+    async def manage(self, commands):
+        cmd = commands[0]
+        address = commands[1]
+        device = Device.get_device_by_address(address)
+        if device is None:
+            return
+
+        if cmd == 'config':
+            await device.config_device(commands[2], commands[3])
+            print(device.config_dict)
