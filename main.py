@@ -93,7 +93,7 @@ async def cli_server():
             if data[0] == 'quit':
                 system_quit()
                 
-            await manager.manage(data)
+            await manager.process_command(data)
             
         await asyncio.sleep(0.5)
 
