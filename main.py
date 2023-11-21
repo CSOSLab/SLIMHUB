@@ -19,7 +19,7 @@ from dean_uuid import *
 
 host = 'localhost'
 port = 6604
-env_sound_model_path = 'models/cnn_12_f32.tflite'
+env_sound_model_path = os.path.dirname(os.path.realpath(__file__))+'/models/cnn_12_f32.tflite'
 
 sound_process = SoundProcess()
 data_process = DataProcess()
@@ -40,7 +40,6 @@ def system_quit():
 async def ble_main():
     async def scan():
         target_devices = []
-        print('scan start')
         devices = await BleakScanner.discover(return_adv=True, timeout=2)
 
         for dev in devices.values():
@@ -122,11 +121,13 @@ async def async_main():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Slimhub service")
-    parser.add_argument('-r', '--run', action='store_true', help='main start')
-    parser.add_argument('-c', '--config', nargs=3, help='config device')
-    parser.add_argument('-s', '--service', nargs=4, help='Manage characteristic notification')
-    parser.add_argument('-l', '--list', action='store_true', help='List connected devices')
-    parser.add_argument('-q', '--quit', action='store_true')
+    parser.add_argument('-r', '--run', action='store_true', help='run slimhub client')
+    parser.add_argument('-c', '--config', nargs=3, help='configure device', 
+                        metavar=('address', 'target', 'data'))
+    parser.add_argument('-s', '--service', nargs=4, help='manage characteristic notification', 
+                        metavar=('address', 'enable/disable', 'service', 'characteristic'))
+    parser.add_argument('-l', '--list', action='store_true', help='list registered devices')
+    parser.add_argument('-q', '--quit', action='store_true', help='quit slimhub client')
 
     if len(sys.argv)==1:
         parser.print_help(sys.stderr)

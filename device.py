@@ -46,7 +46,7 @@ class Device:
         self.is_connected = False
     
     def __repr__(self):
-        return f"<{self.config_dict['address']}, {self.config_dict['type']}, {self.config_dict['name']}, {self.config_dict['location']}, {self.is_connected}>"
+        return f"<{self.__class__.__name__}, {self.config_dict['address']}, {self.config_dict['type']}, {self.config_dict['name']}, {self.config_dict['location']}, {self.is_connected}>"
     
     def remove(self):
         connected_devices.pop(self.config_dict['address'])
@@ -189,7 +189,7 @@ class Device:
                 pass
 
     async def init_service(self, service_name):
-        data_path = os.path.join(os.getcwd()+"/data", self.config_dict['location'], self.config_dict['type'], self.config_dict['address'])
+        data_path = os.path.join(os.path.dirname(os.path.realpath(__file__))+"/data", self.config_dict['location'], self.config_dict['type'], self.config_dict['address'])
 
         service = self.get_service_by_name(service_name)
 
@@ -269,7 +269,8 @@ class DeviceManager:
 
             if device is None:
                 return
-
+            
+        print('')
         if cmd == 'config':
             await device.config_device(commands[2], commands[3])
             print(device.config_dict)
@@ -283,4 +284,6 @@ class DeviceManager:
                 print("Type enable/disable")
         
         elif cmd == 'list':
-            print(connected_devices)
+            print(f"{'Address':<20}{'Type':<10}{'Name':<15}{'Location':<15}{'Connected':<10}")
+            for value in connected_devices.values():
+                print(f"{value.config_dict['address']:<20}{value.config_dict['type']:<10}{value.config_dict['name']:<15}{value.config_dict['location']:<15}{value.is_connected:<10}")

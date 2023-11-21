@@ -91,7 +91,7 @@ class SoundProcess(Process):
 
     def save_wav(self, output_path, input, sr):
         sf.write(output_path, input, sr, 'PCM_16')
-        print(output_path, 'saved')
+        # print(output_path, 'saved')
 
     def get_mfcc(self, input, sr, n_mfcc, n_mels, n_fft, n_hop):
         input_pcm = np.array(input, dtype=np.float32)
@@ -156,7 +156,7 @@ class SoundProcess(Process):
                 msg['duration'] = (end_time-current_buffer.start_time[idx])*1000
                 msg['reliability'] = current_buffer.reliability[idx]/current_buffer.count[idx]
                 
-                print(msg)
+                # print(msg)
                 # LogProcess.queue.put(msg)
 
                 current_buffer.start_time[idx] = 0
@@ -416,7 +416,7 @@ class DataProcess(Process):
             if len(data) < 37:
                 self._save_file_at_dir(address, path, received_time, data)
                 processed_time = time.time()
-                print(address, 'DATA:', (processed_time-received_time)*1000,'ms')
+                # print(address, 'DATA:', (processed_time-received_time)*1000,'ms')
 
 class LogProcess(Process):
     MSGQ_TYPE_DEVICE = 1
