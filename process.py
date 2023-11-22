@@ -171,11 +171,21 @@ class SoundProcess(Process):
     def _run(self):
         window_hop = int((self.sound_unit_samples * self.sound_clip_length_sec)/2)
 
+        path_base = os.path.dirname(os.path.realpath(__file__))+"/data"
+
         while True:
-            address, received_time, data_type, path, data = self.queue.get()
-            if data_type == 'processed':
+            location, device_type, address, service_name, char_name, received_time, data = self.queue.get()
+
+            path = os.path.join(path_base, location, device_type, address, service_name)
+
+            try:
+                os.makedirs(path, exist_ok=True)
+            except:
+                pass
+
+            if char_name == 'processed':
                 self.data_collection_mode = False
-            elif data_type == 'raw':
+            elif char_name == 'raw':
                 self.data_collection_mode = True
 
             time_dt = datetime.fromtimestamp(received_time)
@@ -264,9 +274,9 @@ class SoundProcess(Process):
                         #     mean = np.mean(buf[idx][buf[idx] > self.result_threshold])
                         #     f_logs.write(log_time+','+self.classlist[idx]+','+str(counts[idx])+','+'%.2f'%mean+'\n')
                         
-                        # # Process time check
-                        # processed_time = time.time()
-                        # print(address, 'SOUND:', (processed_time-received_time)*1000,'ms')
+                        # Process time check
+                        processed_time = time.time()
+                        print(address, 'SOUND:', (processed_time-received_time)*1000,'ms')
 
                         current_buffer.voting_buffer = current_buffer.voting_buffer[1:]
                         
@@ -280,11 +290,20 @@ class DataProcess(Process):
         self.queue = mp.Queue()
         self.process = mp.Process(target=self._run)
     # Process functions ------------------------------------------------------------
-    def _save_file_at_dir(self, address, dir_path, received_time, file_content, mode='a'):
+    def _save_file_at_dir(self, location, device_type, address, service_name, char_name, received_time, data, mode='a'):
         def swapEndianness(hexstring):
             ba = bytearray.fromhex(hexstring)
             ba.reverse()
             return ba.hex()
+        
+        path_base = os.path.dirname(os.path.realpath(__file__))+"/data"
+
+        dir_path = os.path.join(path_base, location, device_type, address, service_name)
+
+        try:
+            os.makedirs(dir_path, exist_ok=True)
+        except:
+            pass
         
         time_dt = datetime.fromtimestamp(received_time)
         filename = str(time_dt.strftime("%Y-%m-%d")+".txt")
@@ -294,11 +313,11 @@ class DataProcess(Process):
         #     return str("%04x"%f_data_i), str("%04x"%f_data_d)
 
         with open(os.path.join(dir_path, filename), mode) as f:
-            if len(file_content) == 1:
+            if service_name == "grideye":
                 if os.path.getsize(os.path.join(dir_path, filename)) == 0:
                     f.write("time,action\n")
                 grideye_msg = ""
-                grideye_unpacked = struct.unpack("<B", file_content)
+                grideye_unpacked = struct.unpack("<B", data)
                 grideye_msg = grideye_msg+str(grideye_unpacked)
                 # f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+str(grideye_msg)+"\n")
                 grideye_msg = grideye_msg.replace("(", "").replace(")", "")
@@ -320,9 +339,10 @@ class DataProcess(Process):
                 # self.msgq.send(msgq_payload_device_signal, MSGQ_TYPE_DEVICE)
 
                 # mqtt_msg_dict = {}
-            elif len(file_content) == 10:
+
+            elif service_name == "aat":
                 aat_msg = ""
-                aat_unpacked = struct.unpack("<BBBBBBBBBB", file_content)
+                aat_unpacked = struct.unpack("<BBBBBBBBBB", data)
                 aat_msg = aat_msg+str(aat_unpacked)
                 # f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+str(aat_msg)+"\n")
                 aat_msg = aat_msg.replace("(", "").replace(")", "")
@@ -335,7 +355,8 @@ class DataProcess(Process):
                 # mqtt_msg_dict.update(location=found_location)
                 # mqtt_msg_dict.update(time=time_dt.strftime("%Y-%m-%d %H:%M:%S"))
                 # # mqtt_msg_dict.update(aat=)
-            else:
+
+            elif service_name == "environment":
                 if os.path.getsize(os.path.join(dir_path, filename)) == 0:
                     f.write("time,press,temp,humid,gas_raw,iaq,s_iaq,eco2,bvoc,gas_percent,clear\n")
                 # data_str=str(file_content[0])+"."+str(file_content[1])+","+\
@@ -345,7 +366,7 @@ class DataProcess(Process):
                 file_msg = ""
                 log_msg = ""
                 for i in range(9):
-                    temp_msg = struct.unpack('<f', file_content[4*i:4*(i+1)])
+                    temp_msg = struct.unpack('<f', data[4*i:4*(i+1)])
                     file_msg = file_msg+str(temp_msg)+","
                     temp_msg = str(temp_msg).replace("(", "").replace(",)", "")
                     log_msg = log_msg+format(float(temp_msg), '.3f')+","
@@ -372,7 +393,7 @@ class DataProcess(Process):
                 mqtt_msg_dict.update(eco2=log_msg_mqtt[6])
                 mqtt_msg_dict.update(bvoc=log_msg_mqtt[7])
                 mqtt_msg_dict.update(gas_percent=log_msg_mqtt[8])
-                mqtt_msg_dict.update(rawdata=file_content.hex())
+                mqtt_msg_dict.update(rawdata=data.hex())
 
                 LogProcess.queue.put(mqtt_msg_dict)
 
@@ -409,14 +430,17 @@ class DataProcess(Process):
                 # self.msgq.send(env_msgq_payload_temp, MSGQ_TYPE_ENV)
                 f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+file_msg+"\n")
 
-    def _run(self):
-        while True:
-            address, received_time, path, data = self.queue.get()
+            else:
+                return
 
-            if len(data) < 37:
-                self._save_file_at_dir(address, path, received_time, data)
-                processed_time = time.time()
-                # print(address, 'DATA:', (processed_time-received_time)*1000,'ms')
+    def _run(self):
+        while True:            
+            location, device_type, address, service_name, char_name, received_time, data = self.queue.get()
+
+            self._save_file_at_dir(location, device_type, address, service_name, char_name, received_time, data)
+            
+            processed_time = time.time()
+            print(address, 'DATA:', (processed_time-received_time)*1000,'ms')
 
 class LogProcess(Process):
     MSGQ_TYPE_DEVICE = 1

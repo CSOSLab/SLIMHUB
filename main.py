@@ -13,9 +13,12 @@ import argparse
 from threading import Thread
 from multiprocessing import Manager
 
+import device
+
 from process import *
-from device import Device, DeviceManager
 from dean_uuid import *
+
+return_flag = False
 
 host = 'localhost'
 port = 6604
@@ -25,17 +28,7 @@ sound_process = SoundProcess()
 data_process = DataProcess()
 log_process = LogProcess()
 
-manager = DeviceManager()
-
-def system_quit():
-    sound_process.stop()
-    data_process.stop()
-    log_process.stop()
-    sound_process.process.join()
-    data_process.process.join()
-    log_process.process.join()
-
-    sys.exit(1)
+manager = device.DeviceManager()
     
 async def ble_main():
     async def scan():
@@ -48,26 +41,32 @@ async def ble_main():
         return target_devices
     
     while True:
+        if return_flag:
+            return
         try:
             target_devices = await scan()
             for dev in target_devices:
-                if Device.get_device_by_address(dev.address) is None:
-                    print(dev, "found")
+                if device.get_device_by_address(dev.address) is None:
+                    current_device = device.Device(dev)
+                    if current_device.config_dict['type'] == "DE&N":
+                        current_device.manager_queue = manager.get_queue()
+                        current_device.sound_queue = sound_process.get_queue()
+                        current_device.data_queue = data_process.get_queue()
 
-                    device = Device(dev)
-                    device.sound_queue = sound_process.get_queue()
-                    device.data_queue = data_process.get_queue()
+                    await current_device.ble_client_start()
+                    print(dev, "connected")
 
-                    await device.ble_client_start()
                 else:
+                    await current_device.ble_client_start()
                     print(dev, "reconnected")
-                    await device.ble_client_start()
+
+                await asyncio.sleep(1)
 
         except Exception as e:
             print(e)
             pass
 
-        await asyncio.sleep(10.0)
+        await asyncio.sleep(10)
 
 async def cli_server():
     def read(s):
@@ -85,17 +84,20 @@ async def cli_server():
     s.bind((host, port))
     s.listen(5)
     while True:
-        sl = select.select([s], [], [], 0.1)
+        sl = select.select([s], [], [], 0.05)
         if len(sl[0]) > 0:
             conn, addr = s.accept()
             data = eval(read(conn))
 
             if data[0] == 'quit':
-                system_quit()
+                global return_flag 
+                return_flag = True
+
+                return
                 
             await manager.process_command(data)
             
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(1)
 
 def send_command(cmd, args_dict):
     s = socket.socket(socket.AF_INET)
@@ -109,7 +111,7 @@ def send_command(cmd, args_dict):
     elif type(args_dict[cmd]) == list:
         args_dict[cmd].insert(0, cmd)
         s.send(str(args_dict[cmd]).encode())
-    
+
 async def async_main():
     ble_task = asyncio.create_task(ble_main())
     manager_task = asyncio.create_task(cli_server())
@@ -117,6 +119,13 @@ async def async_main():
     await ble_task
     await manager_task
 
+    sound_process.stop()
+    data_process.stop()
+    log_process.stop()
+    sound_process.process.join()
+    data_process.process.join()
+    log_process.process.join()
+    
     return
 
 if __name__ == "__main__":
@@ -131,7 +140,7 @@ if __name__ == "__main__":
 
     if len(sys.argv)==1:
         parser.print_help(sys.stderr)
-        sys.exit(1)
+        sys.exit(0)
 
     args = parser.parse_args()
     args_dict = vars(args)
