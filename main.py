@@ -60,7 +60,7 @@ async def ble_main():
                     await current_device.ble_client_start()
                     print(dev, "reconnected")
 
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.1)
 
         except Exception as e:
             print(e)
@@ -135,6 +135,7 @@ if __name__ == "__main__":
                         metavar=('address', 'target', 'data'))
     parser.add_argument('-s', '--service', nargs=4, help='manage characteristic notification', 
                         metavar=('address', 'enable/disable', 'service', 'characteristic'))
+    parser.add_argument('-a', '--apply', action='store_true', help='apply config file')
     parser.add_argument('-l', '--list', action='store_true', help='list registered devices')
     parser.add_argument('-q', '--quit', action='store_true', help='quit slimhub client')
 
@@ -158,6 +159,9 @@ if __name__ == "__main__":
     
     if args.service:
         send_command('service', args_dict)
+    
+    if args.apply:
+        send_command('apply', args_dict)
 
     if args.list:
         send_command('list', args_dict)

@@ -274,6 +274,12 @@ class DeviceManager:
             for value in connected_devices.values():
                 print(f"{value.config_dict['address']:<20}{value.config_dict['type']:<10}{value.config_dict['name']:<15}{value.config_dict['location']:<15}{value.is_connected:<10}")
 
+        elif cmd == 'apply':
+            for value in connected_devices.values():
+                await value.load_config()
+                await asyncio.sleep(0.1)
+            print("Config data applied")
+
     def get_queue(self):
         return self.queue
     
