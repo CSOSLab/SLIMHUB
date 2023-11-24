@@ -276,7 +276,7 @@ class SoundProcess(Process):
                         
                         # Process time check
                         processed_time = time.time()
-                        print(address, 'SOUND:', (processed_time-received_time)*1000,'ms')
+                        # print(address, 'SOUND:', (processed_time-received_time)*1000,'ms')
 
                         current_buffer.voting_buffer = current_buffer.voting_buffer[1:]
                         
@@ -440,7 +440,7 @@ class DataProcess(Process):
             self._save_file_at_dir(location, device_type, address, service_name, char_name, received_time, data)
             
             processed_time = time.time()
-            print(address, 'DATA:', (processed_time-received_time)*1000,'ms')
+            # print(address, 'DATA:', (processed_time-received_time)*1000,'ms')
 
 class LogProcess(Process):
     MSGQ_TYPE_DEVICE = 1

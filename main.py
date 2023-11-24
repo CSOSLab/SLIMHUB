@@ -45,8 +45,14 @@ async def ble_main():
             return
         try:
             target_devices = await scan()
-            for dev in target_devices:
-                if device.get_device_by_address(dev.address) is None:
+        except Exception as e:
+            print(e)
+            pass
+
+        for dev in target_devices:
+            try:
+                current_device = device.get_device_by_address(dev.address)
+                if current_device is None:
                     current_device = device.Device(dev)
                     if current_device.config_dict['type'] == "DE&N":
                         current_device.manager_queue = manager.get_queue()
@@ -59,12 +65,11 @@ async def ble_main():
                 else:
                     await current_device.ble_client_start()
                     print(dev, "reconnected")
+            except Exception as e:
+                print(e)
+                pass
 
-                await asyncio.sleep(0.1)
-
-        except Exception as e:
-            print(e)
-            pass
+            await asyncio.sleep(0.1)
 
         await asyncio.sleep(10)
 
