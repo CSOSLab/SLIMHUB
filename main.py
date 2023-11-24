@@ -23,7 +23,7 @@ return_flag = False
 
 host = 'localhost'
 port = 6604
-env_sound_model_path = os.path.dirname(os.path.realpath(__file__))+'/models/cnn_12_f32.tflite'
+env_sound_model_path = os.path.dirname(os.path.realpath(__file__))+'/programdata/models/cnn_12_f32.tflite'
 
 sound_process = SoundProcess()
 data_process = DataProcess()
@@ -31,7 +31,7 @@ log_process = LogProcess()
 
 manager = device.DeviceManager()
 
-logging.basicConfig(filename='test.log', format='%(asctime)s: %(levelname)s: %(message)s', level=logging.INFO)
+logging.basicConfig(filename='programdata/logging.log', format='%(asctime)s: %(levelname)s: %(message)s', level=logging.INFO)
 
 async def ble_main():
     async def scan():

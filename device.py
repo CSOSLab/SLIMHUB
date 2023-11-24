@@ -101,7 +101,7 @@ class Device:
         return None
     
     async def config_device(self, target, data):
-        config_path = os.path.dirname(os.path.realpath(__file__))+"/config"
+        config_path = os.path.dirname(os.path.realpath(__file__))+"/programdata/config"
         os.makedirs(config_path, exist_ok=True)
 
         file_path = os.path.join(config_path, self.config_dict['address']+'.json')
@@ -116,7 +116,7 @@ class Device:
         await self.ble_client.write_gatt_char(char_uuid, bytearray(data, 'utf-8'))
 
     async def load_config(self):
-        config_path = os.path.dirname(os.path.realpath(__file__))+"/config"
+        config_path = os.path.dirname(os.path.realpath(__file__))+"/programdata/config"
         os.makedirs(config_path, exist_ok=True)
 
         file_path = os.path.join(config_path, self.config_dict['address']+'.json')
@@ -139,7 +139,7 @@ class Device:
             return False
     
     def save_config(self):
-        config_path = os.path.dirname(os.path.realpath(__file__))+"/config"
+        config_path = os.path.dirname(os.path.realpath(__file__))+"/programdata/config"
         os.makedirs(config_path, exist_ok=True)
 
         file_path = os.path.join(config_path, self.config_dict['address']+'.json')
