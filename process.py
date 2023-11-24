@@ -17,6 +17,8 @@ import sysv_ipc
 import soundfile as sf
 import librosa
 
+import logging
+
 from decoder import Decoder
 
 class Process:

@@ -12,6 +12,7 @@ import select
 import argparse
 from threading import Thread
 from multiprocessing import Manager
+import logging
 
 import device
 
@@ -29,7 +30,9 @@ data_process = DataProcess()
 log_process = LogProcess()
 
 manager = device.DeviceManager()
-    
+
+logging.basicConfig(filename='test.log', format='%(asctime)s: %(levelname)s: %(message)s', level=logging.INFO)
+
 async def ble_main():
     async def scan():
         target_devices = []
@@ -46,7 +49,7 @@ async def ble_main():
         try:
             target_devices = await scan()
         except Exception as e:
-            print(e)
+            logging.warning(e)
             pass
 
         for dev in target_devices:
@@ -60,13 +63,13 @@ async def ble_main():
                         current_device.data_queue = data_process.get_queue()
 
                     await current_device.ble_client_start()
-                    print(dev, "connected")
+                    logging.info('%s connected', dev)
 
                 else:
                     await current_device.ble_client_start()
-                    print(dev, "reconnected")
+                    logging.info('%s reconnected', dev)
             except Exception as e:
-                print(e)
+                logging.warning(e)
                 pass
 
             await asyncio.sleep(0.1)
@@ -95,6 +98,7 @@ async def cli_server():
             data = eval(read(conn))
 
             if data[0] == 'quit':
+                logging.info('Quit command received')
                 global return_flag 
                 return_flag = True
 
@@ -110,7 +114,7 @@ def send_command(cmd, args_dict):
         s.connect((host, port))
     except:
         print("Slimhub client is not running")
-        sys.exit(1)
+        sys.exit(0)
     if type(args_dict[cmd]) == bool:
         s.send(str([cmd]).encode())
     elif type(args_dict[cmd]) == list:
@@ -158,6 +162,7 @@ if __name__ == "__main__":
         log_process.start()
 
         asyncio.run(async_main())
+        logging.info('Exiting slimhub client')
     
     if args.config:
         send_command('config', args_dict)

@@ -9,6 +9,7 @@ import time
 import struct
 import json
 import struct
+import logging
 
 from dean_uuid import *
 
@@ -54,7 +55,7 @@ class Device:
         try:
             connected_devices.pop(self.config_dict['address'])
         except Exception as e:
-            print('Device pop failed:',e)
+            logging.warning('Device pop failed: %s', e)
             pass
         del self
         
@@ -83,7 +84,7 @@ class Device:
                 self.data_queue.put([self.config_dict['location'], self.config_dict['type'], self.config_dict['address'], service_name, char_name, received_time, data])
     
     def _ble_disconnected_callback(self, client):
-        print(f'Device {client.address} disconnected')
+        logging.info('%s: %s disconnected', client.address, self.config_dict['type'])
         self.is_connected = False
         # self.remove()
 
@@ -153,9 +154,9 @@ class Device:
             if char_uuid is not None:
                 try:
                     await self.ble_client.start_notify(char_uuid, self._ble_notify_callback)
-                    print('Characteristic:', service_name, char_name, 'enabled')
+                    logging.info('%s: Characteristic %s %s %s', self.config_dict['address'], service_name, char_name, 'enabled')
                 except:
-                    print('Characteristic:', service_name, char_name, 'activation failed')
+                    logging.info('%s: Characteristic %s %s %s', self.config_dict['address'], service_name, char_name, 'activation failed')
                     return 
 
     async def deactivate_characteristic(self, service_name, char_name):
@@ -166,9 +167,9 @@ class Device:
             if char_uuid is not None:
                 try:
                     await self.ble_client.stop_notify(char_uuid)
-                    print('Characteristic:', service_name, char_name, 'disabled')
+                    logging.info('%s: Characteristic %s %s %s', self.config_dict['address'], service_name, char_name, 'disabled')
                 except:
-                    print('Characteristic:', service_name, char_name, 'deactivation failed')
+                    logging.info('%s: Characteristic %s %s %s', self.config_dict['address'], service_name, char_name, 'deactivation failed')
 
     async def activate_service(self, service_name):
         service = self.get_service_by_name(service_name)
@@ -226,7 +227,7 @@ class Device:
                     return
 
         except Exception as e:
-            print(e)
+            logging.warning(e)
             if self.ble_client.is_connected:
                 self.ble_client.disconnect()
             self.remove()
