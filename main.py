@@ -31,7 +31,7 @@ log_process = LogProcess()
 
 manager = device.DeviceManager()
 
-logging.basicConfig(filename='programdata/logging.log', format='%(asctime)s: %(levelname)s: %(message)s', level=logging.INFO)
+logging.basicConfig(filename=os.path.dirname(os.path.realpath(__file__))+'/programdata/logging.log', format='%(asctime)s: %(levelname)s: %(message)s', level=logging.INFO)
 
 async def ble_main():
     async def scan():

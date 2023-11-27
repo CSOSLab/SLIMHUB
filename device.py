@@ -211,6 +211,7 @@ class Device:
          # Connect and read device info
         try:
             await self.ble_client.connect()
+            await asyncio.sleep(0.1)
 
             service = self.get_service_by_uuid(DEAN_UUID_CONFIG_SERVICE)
 
