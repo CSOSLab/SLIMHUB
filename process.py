@@ -81,7 +81,7 @@ class SoundProcess(Process):
 
         self.sound_sample_rate = self.DEFAULT_SAMPLE_RATE
         self.sound_unit_samples = self.DEFAULT_UNIT_SAMPLES
-        self.sound_clip_length_sec = 10
+        self.sound_clip_length_sec = 30
 
         self.result_threshold = 0.6
         self.voting_buffer_len = 7
@@ -125,7 +125,7 @@ class SoundProcess(Process):
 
         return vote_result, reliab_result
 
-    def generate_events(self, address, vote, reliab, received_time, end=False):
+    def generate_events(self, address, vote, reliab, received_time, end=False, log_path=None, time_dt=None):
         current_buffer = self.buffer[address]
 
         index = np.where(vote > self.count_threshold)[0]
@@ -158,6 +158,10 @@ class SoundProcess(Process):
                 msg['duration'] = (end_time-current_buffer.start_time[idx])*1000
                 msg['reliability'] = current_buffer.reliability[idx]/current_buffer.count[idx]
                 
+                if log_path is not None:
+                    with open(os.path.join(log_path, str(time_dt.strftime("%Y-%m-%d_%H"))+".txt"), 'a') as f:
+                        f.write(msg['event']+','+str(msg['start_time'])+','+str(msg['end_time'])+','+str(msg['duration'])+','+'%.2f'%msg['reliability']+'\n')
+
                 # print(msg)
                 # LogProcess.queue.put(msg)
 
@@ -197,25 +201,24 @@ class SoundProcess(Process):
             
             current_buffer = self.buffer[address]
 
-            wav_path = os.path.join(path,"wavfiles",str(time_dt.strftime("%Y-%m-%d")))
-            byte_path = os.path.join(path,"bytes",str(time_dt.strftime("%Y-%m-%d")))
-            
-            os.makedirs(os.path.join(path,"logs"), exist_ok=True)
-            os.makedirs(os.path.join(path,"predictions"), exist_ok=True)
+            wav_path = os.path.join(path,"wavfiles")
+            byte_path = os.path.join(path,"bytes")
+            os.makedirs(wav_path, exist_ok=True)
+            os.makedirs(byte_path, exist_ok=True)
 
-            f_logs = open(os.path.join(path,"logs",str(time_dt.strftime("%Y-%m-%d_%H"))+".txt"), 'a')
-            f_raw = open(os.path.join(path,"predictions",str(time_dt.strftime("%Y-%m-%d_%H"))+".txt"), 'a')
+            log_path = os.path.join(path,"logs")
+            pred_path = os.path.join(path,"predictions")
+            os.makedirs(log_path, exist_ok=True)
+            os.makedirs(pred_path, exist_ok=True)
             
             if self.data_collection_mode:
                 # Mic stop trigger packet: save wav and clear buffer
                 if data == b'\xff\xff\xff\xff':
                     if self.save_in_wav:
-                        os.makedirs(wav_path, exist_ok=True)
-                        self.save_wav(os.path.join(wav_path, str(time_dt.strftime("%Y-%m-%d_%H:%M:%S"))+".wav"), current_buffer.raw_buffer, self.sound_sample_rate)
+                        self.save_wav(os.path.join(wav_path, str(time_dt.strftime("%Y-%m-%d_%H-%M-%S"))+".wav"), current_buffer.raw_buffer, self.sound_sample_rate)
                         current_buffer.raw_buffer.clear()
                     else:
-                        os.makedirs(byte_path, exist_ok=True)
-                        with open(os.path.join(byte_path, str(time_dt.strftime("%Y-%m-%d_%H:%M:%S"))+".dat"), "wb") as f:
+                        with open(os.path.join(byte_path, str(time_dt.strftime("%Y-%m-%d_%H-%M-%S"))+".dat"), "wb") as f:
                             f.write(bytearray(current_buffer.raw_buffer))
                         current_buffer.raw_buffer.clear()
                     continue
@@ -227,16 +230,13 @@ class SoundProcess(Process):
                     
                     # Save wav files every 'sound_clip_length_sec' sec
                     if len(current_buffer.raw_buffer) >= (self.sound_unit_samples * self.sound_clip_length_sec):
-                        os.makedirs(wav_path, exist_ok=True)
-                        self.save_wav(os.path.join(wav_path, str(time_dt.strftime("%Y-%m-%d_%H:%M:%S"))+".wav"), current_buffer.raw_buffer, self.sound_sample_rate)
+                        self.save_wav(os.path.join(wav_path, str(time_dt.strftime("%Y-%m-%d_%H-%M-%S"))+".wav"), current_buffer.raw_buffer, self.sound_sample_rate)
                         current_buffer.raw_buffer.clear()
-
                 else:
                     current_buffer.raw_buffer.extend(data)
 
                     if(len(current_buffer.raw_buffer) >= (len(data) * 32 * self.sound_clip_length_sec)):
-                        os.makedirs(byte_path, exist_ok=True)
-                        with open(os.path.join(byte_path, str(time_dt.strftime("%Y-%m-%d_%H:%M:%S"))+".dat"), "wb") as f:
+                        with open(os.path.join(byte_path, str(time_dt.strftime("%Y-%m-%d_%H-%M-%S"))+".dat"), "wb") as f:
                             f.write(bytearray(current_buffer.raw_buffer))
                         current_buffer.raw_buffer.clear()
 
@@ -247,7 +247,7 @@ class SoundProcess(Process):
             else:
                 # Mic stop trigger packet: save wav and clear buffer
                 if data == b'\xff\xff\xff\xff':
-                    self.generate_events(address, post[0], post[1], received_time, end=True)
+                    self.generate_events(address, post[0], post[1], received_time, end=True, log_path=log_path, time_dt=time_dt)
                     current_buffer.clear()
                     continue
 
@@ -261,7 +261,8 @@ class SoundProcess(Process):
 
                     # Save raw inference result
                     log_time = str(time_dt.strftime("%Y-%m-%d %H:%M:%S"))
-                    f_raw.write(log_time+','+','.join(result.astype(str))+'\n')
+                    with open(os.path.join(pred_path, str(time_dt.strftime("%Y-%m-%d_%H"))+".txt"), 'a') as f:
+                        f.write(log_time+','+','.join(result.astype(str))+'\n')
 
                     # Postprocessing
                     current_buffer.voting_buffer.append(result)
@@ -283,9 +284,6 @@ class SoundProcess(Process):
                         current_buffer.voting_buffer = current_buffer.voting_buffer[1:]
                         
                     current_buffer.mfcc_buffer = current_buffer.mfcc_buffer[16:]
-            
-            f_logs.close()
-            f_raw.close()
 
 class DataProcess(Process):
     def __init__(self):
