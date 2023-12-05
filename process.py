@@ -8,6 +8,7 @@ import numpy as np
 import time
 import struct
 import json
+import logging
 
 import tensorflow_lite as tflite
 
@@ -16,8 +17,6 @@ import sysv_ipc
 
 import soundfile as sf
 import librosa
-
-import logging
 
 from decoder import Decoder
 
@@ -50,7 +49,7 @@ class SoundProcess(Process):
     class Buffer:
         def __init__(self):
             self.raw_buffer = []
-            self.mfcc_buffer = []
+            self.feature_buffer = []
 
             # Postprocess buffers
             self.voting_buffer = []
@@ -65,7 +64,7 @@ class SoundProcess(Process):
         
         def clear(self):
             self.raw_buffer.clear()
-            self.mfcc_buffer.clear()
+            self.feature_buffer.clear()
             self.voting_buffer.clear()
             self.result_buffer.clear()
 
@@ -81,6 +80,7 @@ class SoundProcess(Process):
 
         self.sound_sample_rate = self.DEFAULT_SAMPLE_RATE
         self.sound_unit_samples = self.DEFAULT_UNIT_SAMPLES
+        self.sound_frame_per_unit = 32
         self.sound_clip_length_sec = 30
 
         self.result_threshold = 0.6
@@ -90,6 +90,8 @@ class SoundProcess(Process):
         self.tolerance = 10
 
         self.buffer = {}
+
+        self.feature_type = 'mels'
 
     def save_wav(self, output_path, input, sr):
         sf.write(output_path, input, sr, 'PCM_16')
@@ -136,7 +138,7 @@ class SoundProcess(Process):
             current_buffer.count[idx] += 1
             current_buffer.reliability[idx] += reliab[idx]
 
-        if current_buffer.index_before == None:
+        if current_buffer.index_before is None:
             current_buffer.index_before = index
             return
         
@@ -235,7 +237,7 @@ class SoundProcess(Process):
                 else:
                     current_buffer.raw_buffer.extend(data)
 
-                    if(len(current_buffer.raw_buffer) >= (len(data) * 32 * self.sound_clip_length_sec)):
+                    if(len(current_buffer.raw_buffer) >= (len(data) * self.sound_frame_per_unit * self.sound_clip_length_sec)):
                         with open(os.path.join(byte_path, str(time_dt.strftime("%Y-%m-%d_%H-%M-%S"))+".dat"), "wb") as f:
                             f.write(bytearray(current_buffer.raw_buffer))
                         current_buffer.raw_buffer.clear()
@@ -252,12 +254,23 @@ class SoundProcess(Process):
                     continue
 
                 try:
-                    current_buffer.mfcc_buffer.append([struct.unpack('<f', data[i:i+4])[0] for i in range(0, len(data), 4)])
+                    if self.feature_type == 'mfcc':
+                        current_buffer.feature_buffer.append([struct.unpack('<f', data[i:i+4])[0] for i in range(0, len(data), 4)])
+                    elif self.feature_type == 'mels':
+                        current_buffer.feature_buffer.append(np.array(data, dtype=np.uint8))
                 except:
                     continue
                 
-                if len(current_buffer.mfcc_buffer) == 32:
-                    result = tflite.inference(self.env_interpreter, np.array(current_buffer.mfcc_buffer, dtype='float32').T[..., np.newaxis])
+                if len(current_buffer.feature_buffer) == self.sound_frame_per_unit:
+                    try:
+                        if self.feature_type == 'mfcc':
+                            result = tflite.inference(self.env_interpreter, np.array(current_buffer.feature_buffer, dtype=np.float32).T[..., np.newaxis])
+                        elif self.feature_type == 'mels':
+                            result = tflite.inference(self.env_interpreter, np.array(current_buffer.feature_buffer, dtype=np.uint8).T[..., np.newaxis])
+                            result = result/256.0
+                    except Exception as e:
+                        logging.warning(e)
+                        continue
 
                     # Save raw inference result
                     log_time = str(time_dt.strftime("%Y-%m-%d %H:%M:%S"))
@@ -283,7 +296,7 @@ class SoundProcess(Process):
 
                         current_buffer.voting_buffer = current_buffer.voting_buffer[1:]
                         
-                    current_buffer.mfcc_buffer = current_buffer.mfcc_buffer[16:]
+                    current_buffer.feature_buffer = current_buffer.feature_buffer[int(self.sound_frame_per_unit/2):]
 
 class DataProcess(Process):
     def __init__(self):

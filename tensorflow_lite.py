@@ -1,5 +1,6 @@
 import numpy as np
 import tflite_runtime.interpreter as tflite
+import logging
 
 # tflite functions ------------------------------------------------------------
 def set_interpreter(model_path):

@@ -23,7 +23,7 @@ return_flag = False
 
 host = 'localhost'
 port = 6604
-env_sound_model_path = os.path.dirname(os.path.realpath(__file__))+'/programdata/models/cnn_12_f32.tflite'
+env_sound_model_path = os.path.dirname(os.path.realpath(__file__))+'/programdata/models/mels_cnn_12_uint8.tflite'
 
 sound_process = SoundProcess()
 data_process = DataProcess()
@@ -36,21 +36,25 @@ logging.basicConfig(filename=os.path.dirname(os.path.realpath(__file__))+'/progr
 async def ble_main():
     async def scan():
         target_devices = []
-        devices = await BleakScanner.discover(return_adv=True, timeout=2)
-
-        for dev in devices.values():
-            if DEAN_UUID_BASE_SERVICE in dev[1].service_uuids:
-                target_devices.append(dev[0])
-        return target_devices
+        try:
+            devices = await BleakScanner.discover(return_adv=True, timeout=2)
+        except Exception as e:
+            logging.warning(e)
+            return None
+        else:
+            for dev in devices.values():
+                if DEAN_UUID_BASE_SERVICE in dev[1].service_uuids:
+                    target_devices.append(dev[0])
+            return target_devices
     
     while True:
         if return_flag:
             return
-        try:
-            target_devices = await scan()
-        except Exception as e:
-            logging.warning(e)
-            pass
+
+        target_devices = await scan()
+        if target_devices is None:
+            await asyncio.sleep(10)
+            continue
 
         for dev in target_devices:
             try:

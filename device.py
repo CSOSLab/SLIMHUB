@@ -21,7 +21,7 @@ def get_device_by_address(address):
 class Device:
     enable_default = {
         'grideye': ['prediction'],
-        'aat': ['action'],
+        'aat': [],
         'environment': ['send'],
         'sound': ['processed'],
     }
@@ -127,11 +127,13 @@ class Device:
                 self.config_dict['location'] = json_data['location']
             try:
                 await self.ble_client.write_gatt_char(DEAN_UUID_CONFIG_NAME_CHAR, bytearray(self.config_dict['name'], 'utf-8'))
-            except:
+            except Exception as e:
+                logging.warning(e)
                 pass
             try:
                 await self.ble_client.write_gatt_char(DEAN_UUID_CONFIG_LOCATION_CHAR, bytearray(self.config_dict['location'], 'utf-8'))
-            except: 
+            except Exception as e:
+                logging.warning(e)
                 pass
 
             return True
@@ -184,7 +186,11 @@ class Device:
         enable_list = self.enable.get(service_name, None)
         if enable_list != None:
             for char_name in enable_list:
-                await self.activate_characteristic(service_name, char_name)
+                try:
+                    await self.activate_characteristic(service_name, char_name)
+                except Exception as e:
+                    logging.warning(e)
+                    pass
                 await asyncio.sleep(0.1)
 
     async def deactivate_service(self, service_name):
@@ -195,7 +201,8 @@ class Device:
                 continue
             try:
                 await self.ble_client.stop_notify(characteristic.uuid)
-            except:
+            except Exception as e:
+                logging.warning(e)
                 pass
 
     async def init_services(self):
@@ -206,6 +213,7 @@ class Device:
             service_name = dean_service_lookup.get(service.uuid, None)
             if service_name is not None:
                 await self.activate_service(service_name)
+            await asyncio.sleep(0.1)
 
     async def _connect_device(self):
          # Connect and read device info
@@ -240,7 +248,15 @@ class Device:
         await self._connect_device()
         self.is_connected = True
 
-        await self.init_services()
+        for i in range(3):
+            try:
+                await self.init_services()
+                break
+            except Exception as e:
+                print(e)
+                pass
+            finally:
+                await asyncio.sleep(0.1)
     
     async def ble_client_start(self):
         await self._ble_worker()
@@ -290,4 +306,4 @@ class DeviceManager:
             try:
                 data = self.queue.get_nowait()
             except:
-                asyncio.sleep(1)
+                await asyncio.sleep(1)
