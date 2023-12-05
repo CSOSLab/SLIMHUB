@@ -63,7 +63,7 @@ class Device:
         # grideye analysis
         # set active when people comes in
         value = struct.unpack('B', data[0:1])[0]
-        print(value//10, value%10)
+        # print(value//10, value%10)
 
     # BLE functions ------------------------------------------------------------
     def _ble_notify_callback(self, sender, data):
@@ -157,9 +157,10 @@ class Device:
                 try:
                     await self.ble_client.start_notify(char_uuid, self._ble_notify_callback)
                     logging.info('%s: Characteristic %s %s %s', self.config_dict['address'], service_name, char_name, 'enabled')
+                    return True
                 except:
                     logging.info('%s: Characteristic %s %s %s', self.config_dict['address'], service_name, char_name, 'activation failed')
-                    return 
+                    return False
 
     async def deactivate_characteristic(self, service_name, char_name):
         service = self.get_service_by_name(service_name)
@@ -170,8 +171,10 @@ class Device:
                 try:
                     await self.ble_client.stop_notify(char_uuid)
                     logging.info('%s: Characteristic %s %s %s', self.config_dict['address'], service_name, char_name, 'disabled')
+                    return True
                 except:
                     logging.info('%s: Characteristic %s %s %s', self.config_dict['address'], service_name, char_name, 'deactivation failed')
+                    return False
 
     async def activate_service(self, service_name):
         service = self.get_service_by_name(service_name)
@@ -272,31 +275,38 @@ class DeviceManager:
             device = get_device_by_address(address)
 
             if device is None:
-                return
+                return str(address)+' is not registered'.encode()
             
-        print('')
         if cmd == 'config':
             await device.config_device(commands[2], commands[3])
-            print(device.config_dict)
+            return_msg = f"address: {device.config_dict['address']}, type: {device.config_dict['type']}, name: {device.config_dict['name']}, location: {device.config_dict['location']}"
+            return return_msg.encode()
 
         elif cmd == 'service':
             if commands[2] == 'enable':
-                await device.activate_characteristic(commands[3], commands[4])
+                if await device.activate_characteristic(commands[3], commands[4]):
+                    return f"{commands[1]}: characteristic {commands[3]} {commands[4]} enabled".encode()
+                else:
+                    return f"{commands[1]}: characteristic {commands[3]} {commands[4]} enable failed".encode()
             elif commands[2] == 'disable':
-                await device.deactivate_characteristic(commands[3], commands[4])
+                if await device.deactivate_characteristic(commands[3], commands[4]):
+                    return f"{commands[1]}: characteristic {commands[3]} {commands[4]} disabled".encode()
+                else:
+                    return f"{commands[1]}: characteristic {commands[3]} {commands[4]} disable failed".encode()
             else:
-                print("Type enable/disable")
+                return "Argment 2 must be \'enable\' or \'disable\'".encode()
         
         elif cmd == 'list':
-            print(f"{'Address':<20}{'Type':<10}{'Name':<15}{'Location':<15}{'Connected':<10}")
+            return_msg = f"{'Address':<20}{'Type':<10}{'Name':<15}{'Location':<15}{'Connected':<10}\n"
             for value in connected_devices.values():
-                print(f"{value.config_dict['address']:<20}{value.config_dict['type']:<10}{value.config_dict['name']:<15}{value.config_dict['location']:<15}{value.is_connected:<10}")
+                return_msg += f"{value.config_dict['address']:<20}{value.config_dict['type']:<10}{value.config_dict['name']:<15}{value.config_dict['location']:<15}{value.is_connected:<10}\n"
+            return return_msg.encode()
 
         elif cmd == 'apply':
             for value in connected_devices.values():
                 await value.load_config()
                 await asyncio.sleep(0.1)
-            print("Config data applied")
+            return "Config data applied".encode()
 
     def get_queue(self):
         return self.queue

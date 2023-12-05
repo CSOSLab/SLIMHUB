@@ -13,13 +13,12 @@ import argparse
 from threading import Thread
 from multiprocessing import Manager
 import logging
+import signal
 
 import device
 
 from process import *
 from dean_uuid import *
-
-return_flag = False
 
 host = 'localhost'
 port = 6604
@@ -33,7 +32,9 @@ manager = device.DeviceManager()
 
 logging.basicConfig(filename=os.path.dirname(os.path.realpath(__file__))+'/programdata/logging.log', format='%(asctime)s: %(levelname)s: %(message)s', level=logging.INFO)
 
-async def ble_main():
+term_flag = False
+
+async def main_worker(server):
     async def scan():
         target_devices = []
         try:
@@ -48,9 +49,10 @@ async def ble_main():
             return target_devices
     
     while True:
-        if return_flag:
+        if term_flag:
+            server.close()
             return
-
+        
         target_devices = await scan()
         if target_devices is None:
             await asyncio.sleep(10)
@@ -80,66 +82,64 @@ async def ble_main():
 
         await asyncio.sleep(10)
 
-async def cli_server():
-    def read(s):
-        data = ''
-        while True:
-            block = s.recv(4096)
-            if len(block) == 0: return data
-            if b'\n' in block:
-                block,o = block.split(b'\n', 1)
-                data += block.decode()
-                return data
-            data += block.decode()
+async def cli_handler(reader, writer):
+    def parse_message(msg):
+        data = msg.decode()
+        data = data.replace('\'', '')
+        data = data[1:-1]
+        data = data.split(', ')
+        return data
+    
+    try:
+        msg = await reader.read(1024)
+        data = parse_message(msg)
 
-    s = socket.socket(socket.AF_INET)
-    s.bind((host, port))
-    s.listen(5)
-    while True:
-        sl = select.select([s], [], [], 0.05)
-        if len(sl[0]) > 0:
-            conn, addr = s.accept()
-            data = eval(read(conn))
-
-            if data[0] == 'quit':
-                logging.info('Quit command received')
-                global return_flag 
-                return_flag = True
-
-                return
-                
-            await manager.process_command(data)
-            
-        await asyncio.sleep(1)
+        if data[0] == 'quit':
+            logging.info('Client requested server shutdown')
+            writer.write('Shutting down server'.encode())
+            await writer.drain()
+            global term_flag
+            term_flag = True
+        else:
+            return_msg = await manager.process_command(data)
+            writer.write(return_msg)
+            await writer.drain()
+    finally:
+        writer.close()
 
 def send_command(cmd, args_dict):
     s = socket.socket(socket.AF_INET)
     try:
         s.connect((host, port))
     except:
-        print("Slimhub client is not running")
+        print("Slimhub server is not running")
         sys.exit(0)
     if type(args_dict[cmd]) == bool:
         s.send(str([cmd]).encode())
     elif type(args_dict[cmd]) == list:
         args_dict[cmd].insert(0, cmd)
         s.send(str(args_dict[cmd]).encode())
+    data = s.recv(4096)
+    print(data.decode())
 
 async def async_main():
-    ble_task = asyncio.create_task(ble_main())
-    manager_task = asyncio.create_task(cli_server())
+    server = await asyncio.start_server(cli_handler, host, port)
+    main_task = asyncio.create_task(main_worker(server))
 
-    await ble_task
-    await manager_task
+    try:
+        async with server:
+            await server.serve_forever()
+    finally:
+        await main_task
 
-    sound_process.stop()
-    data_process.stop()
-    log_process.stop()
-    sound_process.process.join()
-    data_process.process.join()
-    log_process.process.join()
-    
-    return
+        sound_process.stop()
+        data_process.stop()
+        log_process.stop()
+        sound_process.process.join()
+        data_process.process.join()
+        log_process.process.join()
+        
+        return
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Slimhub service")
@@ -166,7 +166,7 @@ if __name__ == "__main__":
         log_process.start()
 
         asyncio.run(async_main())
-        logging.info('Exiting slimhub client')
+        logging.info('Exiting slimhub server')
     
     if args.config:
         send_command('config', args_dict)
