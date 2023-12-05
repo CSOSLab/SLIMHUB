@@ -234,14 +234,14 @@ class Device:
 
                 else:
                     if self.ble_client.is_connected:
-                        self.ble_client.disconnect()
+                        await self.ble_client.disconnect()
                     self.remove()
                     return
 
         except Exception as e:
             logging.warning(e)
             if self.ble_client.is_connected:
-                self.ble_client.disconnect()
+                await self.ble_client.disconnect()
             self.remove()
             return
 
@@ -250,13 +250,16 @@ class Device:
 
         await self._connect_device()
         self.is_connected = True
-
         for i in range(3):
             try:
                 await self.init_services()
                 break
             except Exception as e:
-                print(e)
+                if i == 2:
+                    logging.warning(e)
+                    if self.ble_client.is_connected:
+                        await self.ble_client.disconnect()
+                    self.remove()
                 pass
             finally:
                 await asyncio.sleep(0.1)
