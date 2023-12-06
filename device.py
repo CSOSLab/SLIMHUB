@@ -18,6 +18,9 @@ connected_devices = {}
 def get_device_by_address(address):
     return connected_devices.get(address, None)
 
+class DeviceError(Exception):
+    pass
+        
 class Device:
     enable_default = {
         'grideye': ['prediction'],
@@ -51,13 +54,17 @@ class Device:
     def __repr__(self):
         return f"{self.__class__.__name__}: {self.config_dict['address']}, {self.config_dict['type']}, {self.config_dict['name']}, {self.config_dict['location']}"
     
-    def remove(self):
+    async def remove(self):
+        try:
+            await self.ble_client.disconnect()
+        except:
+            pass
         try:
             connected_devices.pop(self.config_dict['address'])
-        except Exception as e:
-            logging.warning('Device pop failed: %s', e)
+        except:
             pass
-        del self
+        finally:
+            del self
         
     def check_room_status(self, data):
         # grideye analysis
@@ -86,7 +93,6 @@ class Device:
     def _ble_disconnected_callback(self, client):
         logging.info('%s: %s disconnected', client.address, self.config_dict['type'])
         self.is_connected = False
-        # self.remove()
 
     def get_service_by_uuid(self, service_uuid):
         for service in self.ble_client.services:
@@ -127,16 +133,11 @@ class Device:
                 self.config_dict['location'] = json_data['location']
             try:
                 await self.ble_client.write_gatt_char(DEAN_UUID_CONFIG_NAME_CHAR, bytearray(self.config_dict['name'], 'utf-8'))
-            except Exception as e:
-                logging.warning(e)
-                pass
-            try:
                 await self.ble_client.write_gatt_char(DEAN_UUID_CONFIG_LOCATION_CHAR, bytearray(self.config_dict['location'], 'utf-8'))
+                return True
             except Exception as e:
                 logging.warning(e)
-                pass
-
-            return True
+                return False
         else:
             return False
     
@@ -209,21 +210,25 @@ class Device:
                 pass
 
     async def init_services(self):
-        for service in self.ble_client.services:
-            if service.uuid == DEAN_UUID_CONFIG_SERVICE:
-                continue
+        try:
+            for service in self.ble_client.services:
+                if service.uuid == DEAN_UUID_CONFIG_SERVICE:
+                    continue
 
-            service_name = dean_service_lookup.get(service.uuid, None)
-            if service_name is not None:
-                await self.activate_service(service_name)
-            await asyncio.sleep(0.1)
+                service_name = dean_service_lookup.get(service.uuid, None)
+                if service_name is not None:
+                    await self.activate_service(service_name)
+                await asyncio.sleep(0.1)
+        except Exception as e:
+            logging.warning(e)
+            raise DeviceError("Service initialization failed")
 
     async def _connect_device(self):
          # Connect and read device info
         try:
             await self.ble_client.connect()
             await asyncio.sleep(0.1)
-
+            
             service = self.get_service_by_uuid(DEAN_UUID_CONFIG_SERVICE)
 
             if not await self.load_config():
@@ -231,41 +236,28 @@ class Device:
                     self.config_dict['name'] = str(await self.ble_client.read_gatt_char(DEAN_UUID_CONFIG_NAME_CHAR), 'utf-8')
                     self.config_dict['location'] = str(await self.ble_client.read_gatt_char(DEAN_UUID_CONFIG_LOCATION_CHAR), 'utf-8')
                     self.save_config()
-
                 else:
-                    if self.ble_client.is_connected:
-                        await self.ble_client.disconnect()
-                    self.remove()
-                    return
+                    raise DeviceError("Device configuration failed")
 
         except Exception as e:
             logging.warning(e)
-            if self.ble_client.is_connected:
-                await self.ble_client.disconnect()
-            self.remove()
-            return
+            raise DeviceError("Device connection failed")
 
     async def _ble_worker(self):
         self.ble_client = BleakClient(self.config_dict['address'], disconnected_callback=self._ble_disconnected_callback)
-
-        await self._connect_device()
-        self.is_connected = True
-        for i in range(3):
-            try:
-                await self.init_services()
-                break
-            except Exception as e:
-                if i == 2:
-                    logging.warning(e)
-                    if self.ble_client.is_connected:
-                        await self.ble_client.disconnect()
-                    self.remove()
-                pass
-            finally:
-                await asyncio.sleep(0.1)
-    
+        try:
+            await self._connect_device()
+            self.is_connected = True
+            await self.init_services()
+            return True
+        
+        except DeviceError as e:
+            logging.warning(e)
+            await self.remove()
+            return False
+            
     async def ble_client_start(self):
-        await self._ble_worker()
+        return await self._ble_worker()
 
 class DeviceManager:
     def __init__(self):

@@ -59,24 +59,24 @@ async def main_worker(server):
             continue
 
         for dev in target_devices:
-            try:
-                current_device = device.get_device_by_address(dev.address)
-                if current_device is None:
-                    current_device = device.Device(dev)
-                    if current_device.config_dict['type'] == "DE&N":
-                        current_device.manager_queue = manager.get_queue()
-                        current_device.sound_queue = sound_process.get_queue()
-                        current_device.data_queue = data_process.get_queue()
+            current_device = device.get_device_by_address(dev.address)
+            if current_device is None:
+                current_device = device.Device(dev)
+                if current_device.config_dict['type'] == "DE&N":
+                    current_device.manager_queue = manager.get_queue()
+                    current_device.sound_queue = sound_process.get_queue()
+                    current_device.data_queue = data_process.get_queue()
 
-                    await current_device.ble_client_start()
+                if await current_device.ble_client_start():
                     logging.info('%s connected', dev)
-
                 else:
-                    await current_device.ble_client_start()
+                    logging.info('%s connection failed', dev)
+
+            else:
+                if await current_device.ble_client_start():
                     logging.info('%s reconnected', dev)
-            except Exception as e:
-                logging.warning(e)
-                pass
+                else:
+                    logging.info('%s connection failed', dev)
 
             await asyncio.sleep(0.1)
 
@@ -104,6 +104,8 @@ async def cli_handler(reader, writer):
             return_msg = await manager.process_command(data)
             writer.write(return_msg)
             await writer.drain()
+    except asyncio.CancelledError:
+        pass
     finally:
         writer.close()
 
@@ -129,6 +131,8 @@ async def async_main():
     try:
         async with server:
             await server.serve_forever()
+    except asyncio.CancelledError:
+        pass
     finally:
         await main_task
 
