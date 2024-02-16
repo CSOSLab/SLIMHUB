@@ -191,11 +191,6 @@ class SoundProcess(Process):
             except:
                 pass
 
-            if char_name == 'processed':
-                self.data_collection_mode = False
-            elif char_name == 'raw':
-                self.data_collection_mode = True
-
             time_dt = datetime.fromtimestamp(received_time)
 
             if address not in self.buffer:
@@ -213,7 +208,7 @@ class SoundProcess(Process):
             os.makedirs(log_path, exist_ok=True)
             os.makedirs(pred_path, exist_ok=True)
             
-            if self.data_collection_mode:
+            if char_name == 'raw':
                 # Mic stop trigger packet: save wav and clear buffer
                 if data == b'\xff\xff\xff\xff':
                     if self.save_in_wav:
@@ -245,8 +240,29 @@ class SoundProcess(Process):
                 # Process time check
                 # processed_time = time.time()
                 # print(address, 'SOUND:', (processed_time-received_time)*1000,'ms')
-                    
-            else:
+            
+            elif char_name == 'feature':
+                try:
+                    current_feature_segment = [struct.unpack('<f', data[i:i+4])[0] for i in range(0, len(data), 4)]
+                    current_buffer.feature_buffer.extend(current_feature_segment)
+                except:
+                    continue
+
+                if len(current_buffer.feature_buffer) == 48*32:
+                    feature = np.array(current_buffer.feature_buffer, dtype=np.float32).reshape(32,48)
+                    print(feature)
+                    current_buffer.clear()
+            
+            elif char_name == 'result':
+                try:
+                    result = np.array(data, dtype=np.int8)
+                except:
+                    continue
+
+                print(result)
+                
+
+            elif char_name == 'processed':  # Old version
                 # Mic stop trigger packet: save wav and clear buffer
                 if data == b'\xff\xff\xff\xff':
                     self.generate_events(address, post[0], post[1], received_time, end=True, log_path=log_path, time_dt=time_dt)

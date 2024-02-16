@@ -26,7 +26,7 @@ class Device:
         'grideye': ['prediction'],
         'aat': [],
         'environment': ['send'],
-        'sound': ['processed'],
+        'sound': ['result'],
     }
 
     def __init__(self, dev):

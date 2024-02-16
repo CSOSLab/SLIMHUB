@@ -22,8 +22,10 @@ DEAN_UUID_ENVIRONMENT_RESERVED_CHAR =   '4eab0402-6bef-11ee-b962-10012002809a'
 
 # Sound Service
 DEAN_UUID_SOUND_SERVICE =               '4eab0500-6bef-11ee-b962-10012002809a'
-DEAN_UUID_SOUND_PROCESSED_CHAR =        '4eab0501-6bef-11ee-b962-10012002809a'
-DEAN_UUID_SOUND_RAW_CHAR =              '4eab0502-6bef-11ee-b962-10012002809a'
+DEAN_UUID_SOUND_EVENT_CHAR =            '4eab0501-6bef-11ee-b962-10012002809a'
+DEAN_UUID_SOUND_RESULT_CHAR =           '4eab0502-6bef-11ee-b962-10012002809a'
+DEAN_UUID_SOUND_RAW_CHAR =              '4eab0503-6bef-11ee-b962-10012002809a'
+DEAN_UUID_SOUND_FEATURE_CHAR =          '4eab0504-6bef-11ee-b962-10012002809a'
 
 # Relay Service
 DEAN_UUID_RELAY_SERVICE =               '4eab0600-6bef-11ee-b962-10012002809a'
@@ -69,8 +71,11 @@ dean_service_dict = {
     },
     'sound': {
         'service':          DEAN_UUID_SOUND_SERVICE,
-        'processed':        DEAN_UUID_SOUND_PROCESSED_CHAR,
-        'raw':              DEAN_UUID_SOUND_RAW_CHAR
+        'event':            DEAN_UUID_SOUND_EVENT_CHAR,
+        'result':           DEAN_UUID_SOUND_RESULT_CHAR,
+        'raw':              DEAN_UUID_SOUND_RAW_CHAR,
+        'feature':          DEAN_UUID_SOUND_FEATURE_CHAR,
+
     },
     'relay': {
         'service':          DEAN_UUID_RELAY_SERVICE,
@@ -100,8 +105,10 @@ dean_service_lookup = {
     DEAN_UUID_ENVIRONMENT_RESERVED_CHAR:    'reserved',
 
     DEAN_UUID_SOUND_SERVICE:                'sound',
-    DEAN_UUID_SOUND_PROCESSED_CHAR:         'processed',
+    DEAN_UUID_SOUND_EVENT_CHAR:             'event',
+    DEAN_UUID_SOUND_RESULT_CHAR:            'result',
     DEAN_UUID_SOUND_RAW_CHAR:               'raw',
+    DEAN_UUID_SOUND_FEATURE_CHAR:           'feature',
 
     DEAN_UUID_RELAY_SERVICE:                'relay',
 }
