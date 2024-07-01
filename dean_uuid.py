@@ -33,6 +33,11 @@ DEAN_UUID_RELAY_GRID_CHAR =             '4eab0601-6bef-11ee-b962-10012002809a'
 DEAN_UUID_RELAY_ENV_CHAR =              '4eab0602-6bef-11ee-b962-10012002809a'
 DEAN_UUID_RELAY_AAT_CHAR =              '4eab0603-6bef-11ee-b962-10012002809a'
 
+# Inference Service
+DEAN_UUID_INFERENCE_SERVICE =           '4eab0900-6bef-11ee-b962-10012002809a'
+DEAN_UUID_INFERENCE_SEND_CHAR =         '4eab0901-6bef-11ee-b962-10012002809a'
+DEAN_UUID_INFERENCE_RESERVED_CHAR =     '4eab0902-6bef-11ee-b962-10012002809a'
+
 VER_UBINOS = True
 if VER_UBINOS:
     # PAAR Ubinos
@@ -75,13 +80,17 @@ dean_service_dict = {
         'result':           DEAN_UUID_SOUND_RESULT_CHAR,
         'raw':              DEAN_UUID_SOUND_RAW_CHAR,
         'feature':          DEAN_UUID_SOUND_FEATURE_CHAR,
-
     },
     'relay': {
         'service':          DEAN_UUID_RELAY_SERVICE,
         'grid':             DEAN_UUID_RELAY_GRID_CHAR,
         'env':              DEAN_UUID_RELAY_ENV_CHAR,
         'aat':              DEAN_UUID_RELAY_AAT_CHAR
+    },
+    'inference': {
+        'service':          DEAN_UUID_INFERENCE_SERVICE,
+        'send' :            DEAN_UUID_INFERENCE_SEND_CHAR,
+        'reserved' :        DEAN_UUID_INFERENCE_RESERVED_CHAR,
     }
 }
 
@@ -111,4 +120,8 @@ dean_service_lookup = {
     DEAN_UUID_SOUND_FEATURE_CHAR:           'feature',
 
     DEAN_UUID_RELAY_SERVICE:                'relay',
+    
+    DEAN_UUID_INFERENCE_SERVICE:            'inference',
+    DEAN_UUID_INFERENCE_SEND_CHAR:          'send',
+    DEAN_UUID_INFERENCE_RESERVED_CHAR:      'reserved',
 }

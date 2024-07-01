@@ -27,6 +27,7 @@ class Device:
         'aat': [],
         'environment': ['send'],
         'sound': ['result'],
+        'inference': ['send']
     }
 
     def __init__(self, dev):
@@ -83,6 +84,14 @@ class Device:
             if not self.sound_queue.full():
                 self.sound_queue.put([self.config_dict['location'], self.config_dict['type'], self.config_dict['address'], service_name, char_name, received_time, data])
         elif service_name == 'grideye':
+            self.check_room_status(data)
+            if not self.data_queue.full():
+                self.data_queue.put([self.config_dict['location'], self.config_dict['type'], self.config_dict['address'], service_name, char_name, received_time, data])
+        elif service_name == 'environment':
+            self.check_room_status(data)
+            if not self.data_queue.full():
+                self.data_queue.put([self.config_dict['location'], self.config_dict['type'], self.config_dict['address'], service_name, char_name, received_time, data])
+        elif service_name == 'inference':
             self.check_room_status(data)
             if not self.data_queue.full():
                 self.data_queue.put([self.config_dict['location'], self.config_dict['type'], self.config_dict['address'], service_name, char_name, received_time, data])
@@ -230,6 +239,7 @@ class Device:
             await asyncio.sleep(0.1)
             
             service = self.get_service_by_uuid(DEAN_UUID_CONFIG_SERVICE)
+            
 
             if not await self.load_config():
                 if service is not None:

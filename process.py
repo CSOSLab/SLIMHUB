@@ -388,10 +388,7 @@ class DataProcess(Process):
             elif service_name == "environment":
                 if os.path.getsize(os.path.join(dir_path, filename)) == 0:
                     f.write("time,press,temp,humid,gas_raw,iaq,s_iaq,eco2,bvoc,gas_percent,clear\n")
-                # data_str=str(file_content[0])+"."+str(file_content[1])+","+\
-                # str(file_content[2])+"."+str(file_content[3])+","+\
-                # str(file_content[4])+"."+str(file_content[5])+","+\
-                # str(file_content[6])+"."+str(file_content[7])
+                    
                 file_msg = ""
                 log_msg = ""
                 for i in range(9):
@@ -404,8 +401,6 @@ class DataProcess(Process):
                 log_msg = log_msg.replace("(", "").replace(")", "")
                 log_msg = log_msg.replace(",,", ",")
 
-                # mqtt_msg=press_i+press_d+temp_i+temp_d+humid_i+gas_raw_i+eco2_i+bvoc_i+red+green+blue+clear
-                # message="{\"HEADER\":{\"PAAR_ID\":\"FF00FF00\",\"SH_ID\":\"ABCDEFGH\",\"SERVICE_ID\":\"18\",\"DEVICE_TYPE\":\"01\",\"LOCATION\":\"RTLAB502\",\"TIME\":\"2022-11-29 17:01:29\"},\"BODY\":{\"DATA\":{\"CMD\":\"ff\",\"ENV\":\""+file_content.hex()+"\"}}}"
                 log_msg_mqtt = log_msg.split(",")
                 # JSON formatting
                 found_location = dir_path[(dir_path.find("data/")+5):(dir_path.find("/ADL_DETECTOR"))]
@@ -426,37 +421,30 @@ class DataProcess(Process):
 
                 LogProcess.queue.put(mqtt_msg_dict)
 
-                # mqtt_msg_json = json.dumps(mqtt_msg_dict)
-                # # print(mqtt_msg_json)
-
-                # print("[MQTT] : " + mqtt_msg_json)
-                # # print("[LOG] : " + time_dt.strftime("%X")+","+log_msg)
-                # self.mqtt.publish("/CSOS/ADL/ENVDATA",mqtt_msg_json)
+                f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+file_msg+"\n")
                 
-                # # packing data to integer.decimal (int).(int) format
-                # msgq_payload_packing_format = "<"+"i"*18
-                # msgq_payload_dec_resolution = 10000
-                # msgq_payload_list = []
-                # msgq_payload_list.append(float(log_msg_mqtt[0]))
-                # msgq_payload_list.append(float(log_msg_mqtt[1]))
-                # msgq_payload_list.append(float(log_msg_mqtt[2]))
-                # msgq_payload_list.append(float(log_msg_mqtt[3]))
-                # msgq_payload_list.append(float(log_msg_mqtt[4]))
-                # msgq_payload_list.append(float(log_msg_mqtt[5]))
-                # msgq_payload_list.append(float(log_msg_mqtt[6]))
-                # msgq_payload_list.append(float(log_msg_mqtt[7]))
-                # msgq_payload_list.append(float(log_msg_mqtt[8]))
-                # env_msgq_payload_temp = struct.pack(msgq_payload_packing_format,
-                #                                     int(msgq_payload_list[0]), int((msgq_payload_list[0] - int(msgq_payload_list[0]))*msgq_payload_dec_resolution),    #pressure
-                #                                     int(msgq_payload_list[1]), int((msgq_payload_list[1] - int(msgq_payload_list[1]))*msgq_payload_dec_resolution),    #temperature
-                #                                     int(msgq_payload_list[2]), int((msgq_payload_list[2] - int(msgq_payload_list[2]))*msgq_payload_dec_resolution),    #humidity
-                #                                     int(msgq_payload_list[3]), int((msgq_payload_list[3] - int(msgq_payload_list[3]))*msgq_payload_dec_resolution),    #gas_adc_raw
-                #                                     int(msgq_payload_list[4]), int((msgq_payload_list[4] - int(msgq_payload_list[4]))*msgq_payload_dec_resolution),    #IAQ
-                #                                     int(msgq_payload_list[5]), int((msgq_payload_list[5] - int(msgq_payload_list[5]))*msgq_payload_dec_resolution),    #s_IAQ
-                #                                     int(msgq_payload_list[6]), int((msgq_payload_list[6] - int(msgq_payload_list[6]))*msgq_payload_dec_resolution),    #eco2
-                #                                     int(msgq_payload_list[7]), int((msgq_payload_list[7] - int(msgq_payload_list[7]))*msgq_payload_dec_resolution),    #bvoc
-                #                                     int(msgq_payload_list[8]), int((msgq_payload_list[8] - int(msgq_payload_list[8]))*msgq_payload_dec_resolution))    #gas_percent
-                # self.msgq.send(env_msgq_payload_temp, MSGQ_TYPE_ENV)
+            elif service_name == "inference":
+                if os.path.getsize(os.path.join(dir_path, filename)) == 0:
+                    f.write("time,"
+                            "GridEye,Direction,"
+                            "ENV,temp,humid,iaq,eco2,bvoc,clear,"
+                            "SOUND,speech,microwave,vacumming,tv,eating,drop,smoke_extractor,"
+                                    "cooking,dish_clanging,peeing,chopping,water_flowing,"
+                                    "toilet_flushing,walking,brush_teeth")
+                fmt = '<BBBfffffB16b'
+                
+                print(f'bytearray len : {len(data)}')
+                
+                required_bytes = struct.calcsize(fmt)
+                print(f'required byte size : {required_bytes}')
+                
+                if len(data) == required_bytes:
+                    inference_unpacked = struct.unpack(fmt, data)
+                    file_msg = ','.join(map(str, inference_unpacked))
+                    print(file_msg)
+                else :
+                    print('bytearray length - format matching problem!')
+                    
                 f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+file_msg+"\n")
 
             else:
