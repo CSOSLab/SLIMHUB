@@ -430,22 +430,23 @@ class DataProcess(Process):
                             "ENV,temp,humid,iaq,eco2,bvoc,clear,"
                             "SOUND,speech,microwave,vacumming,tv,eating,drop,smoke_extractor,"
                                     "cooking,dish_clanging,peeing,chopping,water_flowing,"
-                                    "toilet_flushing,walking,brush_teeth")
+                                    "toilet_flushing,walking,brush_teeth,\n")
                 fmt = '<BBBfffffB16b'
                 
-                print(f'bytearray len : {len(data)}')
+                # required_bytes = struct.calcsize(fmt)
+                inference_unpacked_data = struct.unpack(fmt, data)
+                file_msg = ','.join(map(str, inference_unpacked_data))
                 
-                required_bytes = struct.calcsize(fmt)
-                print(f'required byte size : {required_bytes}')
-                
-                if len(data) == required_bytes:
-                    inference_unpacked = struct.unpack(fmt, data)
-                    file_msg = ','.join(map(str, inference_unpacked))
-                    print(file_msg)
-                else :
-                    print('bytearray length - format matching problem!')
+                # +128/256
+                if inference_unpacked_data[-17] == 1:
+                    dequantized_values = [(value + 128) / 256 for value in inference_unpacked_data[-16:]]
+                    dequantized_str = ','.join(map(str, dequantized_values))
                     
-                f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+file_msg+"\n")
+                    file_msg_final = ','.join(map(str, inference_unpacked_data[:-16])) + ',' + dequantized_str
+                    f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+file_msg_final+"\n")
+                else :
+                    f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+file_msg+"\n")
+                    
 
             else:
                 return
