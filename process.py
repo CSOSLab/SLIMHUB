@@ -315,6 +315,25 @@ class SoundProcess(Process):
                     current_buffer.feature_buffer = current_buffer.feature_buffer[int(self.sound_frame_per_unit/2):]
 
 class DataProcess(Process):
+    sound_classlist = [
+        'brushing_teeth',
+        'peeing',
+        'toilet_flushing',
+        'vacuum_ventil_dryer',
+        'dish_clanging',
+        'door',
+        'microwave',
+        'frying_boiling',
+        'drop',
+        'chopping',
+        'speech',
+        'tv',
+        'water_flowing_1',
+        'water_flowing_2',
+    ]
+    
+    num_sound_labels = len(sound_classlist)
+                 
     def __init__(self):
         self.queue = mp.Queue()
         self.process = mp.Process(target=self._run)
@@ -427,22 +446,20 @@ class DataProcess(Process):
                 if os.path.getsize(os.path.join(dir_path, filename)) == 0:
                     f.write("time,"
                             "GridEye,Direction,"
-                            "ENV,temp,humid,iaq,eco2,bvoc,clear,"
-                            "SOUND,speech,microwave,vacumming,tv,eating,drop,smoke_extractor,"
-                                    "cooking,dish_clanging,peeing,chopping,water_flowing,"
-                                    "toilet_flushing,walking,brush_teeth,\n")
-                fmt = '<BBBfffffB16b'
+                            "ENV,temp,humid,iaq,eco2,bvoc,")
+                    f.write("SOUND,"+",".join(self.sound_classlist)+"\n")
+                fmt = '<BBBfffff'+'B'+str(self.num_sound_labels)+'b'
                 
                 # required_bytes = struct.calcsize(fmt)
-                inference_unpacked_data = struct.unpack(fmt, data)
+                inference_unpacked_data = struct.unpack(fmt, data[:24 + self.num_sound_labels])
                 file_msg = ','.join(map(str, inference_unpacked_data))
                 
                 # +128/256
-                if inference_unpacked_data[-17] == 1:
-                    dequantized_values = [(value + 128) / 256 for value in inference_unpacked_data[-16:]]
+                if inference_unpacked_data[-(self.num_sound_labels + 1)] == 1:
+                    dequantized_values = [(value + 128) / 256 for value in inference_unpacked_data[-self.num_sound_labels:]]
                     dequantized_str = ','.join(map(str, dequantized_values))
                     
-                    file_msg_final = ','.join(map(str, inference_unpacked_data[:-16])) + ',' + dequantized_str
+                    file_msg_final = ','.join(map(str, inference_unpacked_data[:-self.num_sound_labels])) + ',' + dequantized_str
                     f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+file_msg_final+"\n")
                 else :
                     f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+file_msg+"\n")
