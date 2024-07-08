@@ -232,22 +232,44 @@ class Device:
             logging.warning(e)
             raise DeviceError("Service initialization failed")
 
+    async def sync_current_time(self):
+        now = datetime.now()
+
+        year = now.year
+        month = now.month
+        day = now.day
+        hours = now.hour
+        minutes = now.minute
+        seconds = now.second
+        day_of_week = now.isoweekday() % 7
+        exact_time_256 = 0
+        adjust_reason = 0
+
+        format_string = '<HBBBBBBBB'
+
+        packed_data = struct.pack(format_string, year, month, day, hours, minutes, seconds, day_of_week, exact_time_256, adjust_reason)
+
+        await self.ble_client.write_gatt_char(DEAN_UUID_CTS_CURRENT_TIME_CHAR, packed_data)
+
     async def _connect_device(self):
          # Connect and read device info
         try:
             await self.ble_client.connect()
             await asyncio.sleep(0.1)
             
-            service = self.get_service_by_uuid(DEAN_UUID_CONFIG_SERVICE)
+            config_service = self.get_service_by_uuid(DEAN_UUID_CONFIG_SERVICE)
             
-
             if not await self.load_config():
-                if service is not None:
+                if config_service is not None:
                     self.config_dict['name'] = str(await self.ble_client.read_gatt_char(DEAN_UUID_CONFIG_NAME_CHAR), 'utf-8')
                     self.config_dict['location'] = str(await self.ble_client.read_gatt_char(DEAN_UUID_CONFIG_LOCATION_CHAR), 'utf-8')
                     self.save_config()
                 else:
                     raise DeviceError("Device configuration failed")
+            
+            cts = self.get_service_by_uuid(DEAN_UUID_CTS_SERVICE_UUID)
+            if cts is not None:
+                await self.sync_current_time()
 
         except Exception as e:
             logging.warning(e)
