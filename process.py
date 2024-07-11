@@ -455,16 +455,12 @@ class DataProcess(Process):
                 file_msg = ','.join(map(str, inference_unpacked_data))
                 
                 # +128/256
-                if inference_unpacked_data[-(self.num_sound_labels + 1)] == 1:
-                    dequantized_values = [(value + 128) / 256 for value in inference_unpacked_data[-self.num_sound_labels:]]
-                    dequantized_str = ','.join(map(str, dequantized_values))
+                dequantized_values = [(value + 128) / 256 for value in inference_unpacked_data[-self.num_sound_labels:]]
+                dequantized_str = ','.join(map(str, dequantized_values))
+                
+                file_msg_final = ','.join(map(str, inference_unpacked_data[:-self.num_sound_labels])) + ',' + dequantized_str
+                f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+file_msg_final+"\n")
                     
-                    file_msg_final = ','.join(map(str, inference_unpacked_data[:-self.num_sound_labels])) + ',' + dequantized_str
-                    f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+file_msg_final+"\n")
-                else :
-                    f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+file_msg+"\n")
-                    
-
             else:
                 return
 
