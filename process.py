@@ -316,20 +316,18 @@ class SoundProcess(Process):
 
 class DataProcess(Process):
     sound_classlist = [
-        'brushing_teeth',
+        'brushing',
         'peeing',
-        'toilet_flushing',
-        'vacuum_ventil_dryer',
-        'dish_clanging',
-        'door',
+        'flushing',
+        'airutils',
+        'hitting',
         'microwave',
-        'frying_boiling',
-        'drop',
-        'chopping',
+        'cooking',
         'speech',
         'tv',
-        'water_flowing_1',
-        'water_flowing_2',
+        'watering1',
+        'watering2',
+        'background',
     ]
     
     num_sound_labels = len(sound_classlist)
