@@ -319,6 +319,7 @@ class DataProcess(Process):
         'brushing',
         'peeing',
         'flushing',
+        'afterflushing',
         'airutils',
         'hitting',
         'microwave',
