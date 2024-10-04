@@ -22,11 +22,9 @@ from dean_uuid import *
 
 host = 'localhost'
 port = 6604
-env_sound_model_path = os.path.dirname(os.path.realpath(__file__))+'/programdata/models/mels_cnn_12_uint8.tflite'
 
 sound_process = SoundProcess()
 data_process = DataProcess()
-log_process = LogProcess()
 
 manager = device.DeviceManager()
 
@@ -138,10 +136,8 @@ async def async_main():
 
         sound_process.stop()
         data_process.stop()
-        log_process.stop()
         sound_process.process.join()
         data_process.process.join()
-        log_process.process.join()
         
         return
 
@@ -164,10 +160,8 @@ if __name__ == "__main__":
     args_dict = vars(args)
 
     if args.run:
-        sound_process.set_env_sound_interpreter(env_sound_model_path)
         sound_process.start()
         data_process.start()
-        log_process.start()
 
         asyncio.run(async_main())
         logging.info('Exiting slimhub server')

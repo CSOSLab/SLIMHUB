@@ -104,10 +104,6 @@ class SoundProcess(Process):
         mfcc = mfcc[..., np.newaxis]
 
         return mfcc
-    
-    # TFLite functions ------------------------------------------------------------
-    def set_env_sound_interpreter(self, model_path):
-        self.env_interpreter = tflite.set_interpreter(model_path)
 
     def voting(self, address):
         voting_buffer = np.array(self.buffer[address].voting_buffer)
@@ -208,40 +204,7 @@ class SoundProcess(Process):
             os.makedirs(log_path, exist_ok=True)
             os.makedirs(pred_path, exist_ok=True)
             
-            if char_name == 'raw':
-                # Mic stop trigger packet: save wav and clear buffer
-                if data == b'\xff\xff\xff\xff':
-                    if self.save_in_wav:
-                        self.save_wav(os.path.join(wav_path, str(time_dt.strftime("%Y-%m-%d_%H-%M-%S"))+".wav"), current_buffer.raw_buffer, self.sound_sample_rate)
-                        current_buffer.raw_buffer.clear()
-                    else:
-                        with open(os.path.join(byte_path, str(time_dt.strftime("%Y-%m-%d_%H-%M-%S"))+".dat"), "wb") as f:
-                            f.write(bytearray(current_buffer.raw_buffer))
-                        current_buffer.raw_buffer.clear()
-                    continue
-
-                if self.save_in_wav:
-                    pcm = self.decoder.adpcm_decode(data)
-
-                    current_buffer.raw_buffer.extend(pcm)
-                    
-                    # Save wav files every 'sound_clip_length_sec' sec
-                    if len(current_buffer.raw_buffer) >= (self.sound_unit_samples * self.sound_clip_length_sec):
-                        self.save_wav(os.path.join(wav_path, str(time_dt.strftime("%Y-%m-%d_%H-%M-%S"))+".wav"), current_buffer.raw_buffer, self.sound_sample_rate)
-                        current_buffer.raw_buffer.clear()
-                else:
-                    current_buffer.raw_buffer.extend(data)
-
-                    if(len(current_buffer.raw_buffer) >= (len(data) * self.sound_frame_per_unit * self.sound_clip_length_sec)):
-                        with open(os.path.join(byte_path, str(time_dt.strftime("%Y-%m-%d_%H-%M-%S"))+".dat"), "wb") as f:
-                            f.write(bytearray(current_buffer.raw_buffer))
-                        current_buffer.raw_buffer.clear()
-
-                # Process time check
-                # processed_time = time.time()
-                # print(address, 'SOUND:', (processed_time-received_time)*1000,'ms')
-            
-            elif char_name == 'feature':
+            if char_name == 'feature':
                 try:
                     current_feature_segment = [struct.unpack('<f', data[i:i+4])[0] for i in range(0, len(data), 4)]
                     current_buffer.feature_buffer.extend(current_feature_segment)
@@ -253,66 +216,6 @@ class SoundProcess(Process):
                     print(feature)
                     current_buffer.clear()
             
-            elif char_name == 'result':
-                try:
-                    result = np.array(data, dtype=np.int8)
-                except:
-                    continue
-
-                print(result)
-                
-
-            elif char_name == 'processed':  # Old version
-                # Mic stop trigger packet: save wav and clear buffer
-                if data == b'\xff\xff\xff\xff':
-                    self.generate_events(address, post[0], post[1], received_time, end=True, log_path=log_path, time_dt=time_dt)
-                    current_buffer.clear()
-                    continue
-
-                try:
-                    if self.feature_type == 'mfcc':
-                        current_buffer.feature_buffer.append([struct.unpack('<f', data[i:i+4])[0] for i in range(0, len(data), 4)])
-                    elif self.feature_type == 'mels':
-                        current_buffer.feature_buffer.append(np.array(data, dtype=np.uint8))
-                except:
-                    continue
-                
-                if len(current_buffer.feature_buffer) == self.sound_frame_per_unit:
-                    try:
-                        if self.feature_type == 'mfcc':
-                            result = tflite.inference(self.env_interpreter, np.array(current_buffer.feature_buffer, dtype=np.float32).T[..., np.newaxis])
-                        elif self.feature_type == 'mels':
-                            result = tflite.inference(self.env_interpreter, np.array(current_buffer.feature_buffer, dtype=np.uint8).T[..., np.newaxis])
-                            result = result/256.0
-                    except Exception as e:
-                        logging.warning(e)
-                        continue
-
-                    # Save raw inference result
-                    log_time = str(time_dt.strftime("%Y-%m-%d %H:%M:%S"))
-                    with open(os.path.join(pred_path, str(time_dt.strftime("%Y-%m-%d_%H"))+".txt"), 'a') as f:
-                        f.write(log_time+','+','.join(result.astype(str))+'\n')
-
-                    # Postprocessing
-                    current_buffer.voting_buffer.append(result)
-                    if len(current_buffer.voting_buffer) == self.voting_buffer_len:
-                        post = self.voting(address)
-                        self.generate_events(address, post[0], post[1], received_time)
-                        # Todo: Postprocessing
-                        # buf = np.array(current_buffer.voting_buffer).swapaxes(0, 1)
-                        # counts = np.sum(buf > self.result_threshold, axis=1)
-                        # idxs = np.where(counts != 0)[0]
-                        # for idx in idxs:
-                        #     mean = np.mean(buf[idx][buf[idx] > self.result_threshold])
-                        #     f_logs.write(log_time+','+self.classlist[idx]+','+str(counts[idx])+','+'%.2f'%mean+'\n')
-                        
-                        # Process time check
-                        processed_time = time.time()
-                        # print(address, 'SOUND:', (processed_time-received_time)*1000,'ms')
-
-                        current_buffer.voting_buffer = current_buffer.voting_buffer[1:]
-                        
-                    current_buffer.feature_buffer = current_buffer.feature_buffer[int(self.sound_frame_per_unit/2):]
 
 class DataProcess(Process):
     sound_classlist = [
@@ -360,88 +263,7 @@ class DataProcess(Process):
         #     return str("%04x"%f_data_i), str("%04x"%f_data_d)
 
         with open(os.path.join(dir_path, filename), mode) as f:
-            if service_name == "grideye":
-                if os.path.getsize(os.path.join(dir_path, filename)) == 0:
-                    f.write("time,action\n")
-                grideye_msg = ""
-                grideye_unpacked = struct.unpack("<B", data)
-                grideye_msg = grideye_msg+str(grideye_unpacked)
-                # f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+str(grideye_msg)+"\n")
-                grideye_msg = grideye_msg.replace("(", "").replace(")", "")
-                grideye_msg = grideye_msg.replace(",,", ",")
-                f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+grideye_msg+"\n")
-
-                # mqtt_msg_dict = {}
-                # mqtt_msg_dict.update(SH_ID=self.mqtt.sh_id)
-                # mqtt_msg_dict.update(location=self.device_location)
-                # mqtt_msg_dict.update(time=time_dt.strftime("%Y-%m-%d %H:%M:%S"))
-                # mqtt_msg_dict.update(grideye_raw=grideye_msg)
-                # mqtt_msg_json = json.dumps(mqtt_msg_dict)
-                # self.mqtt.publish("/CSOS/ADL/ADLDATA",mqtt_msg_json)
-                
-                # # packing data into Device's Signal
-                # msgq_payload_device_signal = ""
-                # # msgq_payload_device_signal = msgq_payload_device_signal+str(grideye_msg)
-                # msgq_payload_device_signal = msgq_payload_device_signal+"SJK,"+str(self.device_location)+","+str(grideye_msg[:2])+",,,,,,,,"+"\n"
-                # self.msgq.send(msgq_payload_device_signal, MSGQ_TYPE_DEVICE)
-
-                # mqtt_msg_dict = {}
-
-            elif service_name == "aat":
-                aat_msg = ""
-                aat_unpacked = struct.unpack("<BBBBBBBBBB", data)
-                aat_msg = aat_msg+str(aat_unpacked)
-                # f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+str(aat_msg)+"\n")
-                aat_msg = aat_msg.replace("(", "").replace(")", "")
-                aat_msg = aat_msg.replace(",,", ",")
-                f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+aat_msg+"\n")
-
-                found_location = dir_path[(dir_path.find("data/")+5):(dir_path.find("/AAT"))]
-                # mqtt_msg_dict = {}
-                # mqtt_msg_dict.update(SH_ID=self.mqtt.sh_id)
-                # mqtt_msg_dict.update(location=found_location)
-                # mqtt_msg_dict.update(time=time_dt.strftime("%Y-%m-%d %H:%M:%S"))
-                # # mqtt_msg_dict.update(aat=)
-
-            elif service_name == "environment":
-                if os.path.getsize(os.path.join(dir_path, filename)) == 0:
-                    f.write("time,press,temp,humid,gas_raw,iaq,s_iaq,eco2,bvoc,gas_percent,clear\n")
-                    
-                file_msg = ""
-                log_msg = ""
-                for i in range(9):
-                    temp_msg = struct.unpack('<f', data[4*i:4*(i+1)])
-                    file_msg = file_msg+str(temp_msg)+","
-                    temp_msg = str(temp_msg).replace("(", "").replace(",)", "")
-                    log_msg = log_msg+format(float(temp_msg), '.3f')+","
-                file_msg = file_msg.replace("(", "").replace(")", "")
-                file_msg = file_msg.replace(",,", ",")
-                log_msg = log_msg.replace("(", "").replace(")", "")
-                log_msg = log_msg.replace(",,", ",")
-
-                log_msg_mqtt = log_msg.split(",")
-                # JSON formatting
-                found_location = dir_path[(dir_path.find("data/")+5):(dir_path.find("/ADL_DETECTOR"))]
-                mqtt_msg_dict = {}
-                mqtt_msg_dict.update(address=address)
-                mqtt_msg_dict.update(location=found_location)
-                mqtt_msg_dict.update(time=time_dt.strftime("%Y-%m-%d %H:%M:%S"))
-                mqtt_msg_dict.update(press=log_msg_mqtt[0])
-                mqtt_msg_dict.update(temp=log_msg_mqtt[1])
-                mqtt_msg_dict.update(humid=log_msg_mqtt[2])
-                mqtt_msg_dict.update(gas_raw=log_msg_mqtt[3])
-                mqtt_msg_dict.update(iaq=log_msg_mqtt[4])
-                mqtt_msg_dict.update(s_iaq=log_msg_mqtt[5])
-                mqtt_msg_dict.update(eco2=log_msg_mqtt[6])
-                mqtt_msg_dict.update(bvoc=log_msg_mqtt[7])
-                mqtt_msg_dict.update(gas_percent=log_msg_mqtt[8])
-                mqtt_msg_dict.update(rawdata=data.hex())
-
-                LogProcess.queue.put(mqtt_msg_dict)
-
-                f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+file_msg+"\n")
-                
-            elif service_name == "inference":
+            if service_name == "inference":
                 if os.path.getsize(os.path.join(dir_path, filename)) == 0:
                     f.write("time,"
                             "GridEye,Direction,"
