@@ -29,6 +29,9 @@ class Device:
     def __init__(self, dev):
         connected_devices.update({dev.address: self})
 
+        self.model_dir = "programdata/models/"+dev.address
+        os.makedirs(self.model_dir, exist_ok=True)
+
         self.config_dict = {
             'address': dev.address,
             'type': dev.name,
