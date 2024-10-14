@@ -12,6 +12,7 @@ import struct
 import logging
 
 from dean_uuid import *
+from packet import *
 
 connected_devices = {}
 
@@ -20,11 +21,13 @@ def get_device_by_address(address):
 
 class DeviceError(Exception):
     pass
-        
+
 class Device:
     enable_default = {
+        'sound': ['model'],
         'inference': ['send']
     }
+    model_chunk_size = 128
 
     def __init__(self, dev):
         connected_devices.update({dev.address: self})
@@ -38,6 +41,15 @@ class Device:
             'name': '',
             'location': '',
         }
+
+        self.model_path = os.path.join("programdata", "models", dev.address, dev.address+".tflite")
+        self.sending_model = False
+        self.model_seq = 0
+        self.model_size = 0
+        with open(self.model_path, 'rb') as f:
+            self.model_size = len(f.read())
+
+        self.collecting_feature = False
 
         self.ble_client = None
 
@@ -80,15 +92,41 @@ class Device:
         received_time = time.time()
 
         if service_name == 'sound':
-            if not self.sound_queue.full():
-                self.sound_queue.put([self.config_dict['location'], self.config_dict['type'], self.config_dict['address'], service_name, char_name, received_time, data])
-        elif service_name == 'inference':
+            if char_name == 'model':
+                recv_packet = ModelPacket.unpack(data)
+                
+                if recv_packet.cmd == MODEL_UPDATE_CMD_START:
+                    self.sending_model = True
+                    asyncio.create_task(self.model_send_worker())
+                elif recv_packet.cmd == MODEL_UPDATE_CMD_DATA:
+                    recv_packet = ModelAckPacket.unpack(data)
+                    self.model_seq = recv_packet.seq + 1
+                    asyncio.create_task(self.model_send_worker())
+                elif recv_packet.cmd == MODEL_UPDATE_CMD_END:
+                    logging.info('%s: Model update completed', self.config_dict['address'])
+                    self.sending_model = False
+                    self.model_seq = 0
+
+                elif recv_packet.cmd == FEATURE_COLLECTION_CMD_START:
+                    self.collecting_feature = True
+                elif recv_packet.cmd == FEATURE_COLLECTION_CMD_DATA:
+                    if not self.data_queue.full():
+                        self.sound_queue.put([self.config_dict['location'], self.config_dict['type'], self.config_dict['address'], service_name, char_name, received_time, data])
+                elif recv_packet.cmd == FEATURE_COLLECTION_CMD_FINISH:
+                    if not self.data_queue.full():
+                        self.sound_queue.put([self.config_dict['location'], self.config_dict['type'], self.config_dict['address'], service_name, char_name, received_time, data])
+                elif recv_packet.cmd == FEATURE_COLLECTION_CMD_END:
+                    self.collecting_feature = False
+
+        elif service_name == 'inference':   
             self.check_room_status(data)
             if not self.data_queue.full():
                 self.data_queue.put([self.config_dict['location'], self.config_dict['type'], self.config_dict['address'], service_name, char_name, received_time, data])
     
     def _ble_disconnected_callback(self, client):
         logging.info('%s: %s disconnected', client.address, self.config_dict['type'])
+        self.model_seq = 0
+        self.sending_model = False
         self.is_connected = False
 
     def get_service_by_uuid(self, service_uuid):
@@ -103,6 +141,35 @@ class Device:
             return self.get_service_by_uuid(char_dict['service'])
         return None
     
+    async def model_send_worker(self):
+        # Sleep for a while to prevent packet loss
+        await asyncio.sleep(0.005)
+        # Send model data by chunk
+        total_chunk = self.model_size//self.model_chunk_size + 1
+
+        if self.model_seq > total_chunk:
+            send_packet = ModelPacket(cmd=MODEL_UPDATE_CMD_END)
+
+            # logging.info('%s: Model update end', self.config_dict['address'])
+
+            await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
+
+            return
+        
+        with open(self.model_path, 'rb') as f:
+            model_data = f.read()
+            model_chunk = model_data[self.model_seq*self.model_chunk_size:(self.model_seq+1)*self.model_chunk_size]
+            send_packet = ModelDataPacket(cmd=MODEL_UPDATE_CMD_DATA, seq=self.model_seq, data=model_chunk)
+
+            # logging.info('%s: Sending model data %d/%d', self.config_dict['address'], self.model_seq, total_chunk)
+            try:
+                await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
+            except Exception as e:
+                logging.warning(e)
+                self.sending_model = False
+                return
+    
+
     async def config_device(self, target, data):
         config_path = os.path.dirname(os.path.realpath(__file__))+"/programdata/config"
         os.makedirs(config_path, exist_ok=True)
@@ -239,6 +306,11 @@ class Device:
 
         await self.ble_client.write_gatt_char(DEAN_UUID_CTS_CURRENT_TIME_CHAR, packed_data)
 
+    async def model_update_start(self):
+        logging.info('%s: Model update start', self.config_dict['address'])
+        send_packet = ModelPacket(cmd=MODEL_UPDATE_CMD_START)
+        await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
+
     async def _connect_device(self):
          # Connect and read device info
         try:
@@ -322,6 +394,25 @@ class DeviceManager:
                 await value.load_config()
                 await asyncio.sleep(0.1)
             return "Config data applied".encode()
+        
+        elif cmd == 'update':
+            if device.sending_model:
+                return "Model update is in progress".encode()
+            else:
+                await device.model_update_start()
+                return "Model update started".encode()
+        
+        elif cmd == 'feature':
+            if commands[2] == 'start':
+                send_packet = ModelPacket(cmd=FEATURE_COLLECTION_CMD_START)
+                await device.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
+                return "Feature collection started".encode()
+            elif commands[2] == 'stop':
+                send_packet = ModelPacket(cmd=FEATURE_COLLECTION_CMD_END)
+                await device.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
+                return "Feature collection ended".encode()
+            else:
+                return "Argment 2 must be \'start\' or \'end\'".encode()
 
     def get_queue(self):
         return self.queue

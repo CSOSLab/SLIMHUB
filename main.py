@@ -148,6 +148,10 @@ if __name__ == "__main__":
                         metavar=('address', 'target', 'data'))
     parser.add_argument('-s', '--service', nargs=4, help='manage characteristic notification', 
                         metavar=('address', 'enable/disable', 'service', 'characteristic'))
+    parser.add_argument('-u', '--update', nargs=1, help='update device model',
+                        metavar=('address'))
+    parser.add_argument('-f', '--feature', nargs=2, help='sound feature collection',
+                        metavar=('address', 'start/stop'))
     parser.add_argument('-a', '--apply', action='store_true', help='apply config file')
     parser.add_argument('-l', '--list', action='store_true', help='list registered devices')
     parser.add_argument('-q', '--quit', action='store_true', help='quit slimhub client')
@@ -171,6 +175,12 @@ if __name__ == "__main__":
     
     if args.service:
         send_command('service', args_dict)
+
+    if args.update:
+        send_command('update', args_dict)
+
+    if args.feature:
+        send_command('feature', args_dict)
     
     if args.apply:
         send_command('apply', args_dict)

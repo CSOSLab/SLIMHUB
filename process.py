@@ -9,6 +9,7 @@ import time
 import struct
 import json
 import logging
+from dataclasses import dataclass
 
 import tensorflow_lite as tflite
 
@@ -19,7 +20,8 @@ import soundfile as sf
 import librosa
 
 from decoder import Decoder
-
+from packet import *
+    
 class Process:
     queue = None
     process = None
@@ -34,187 +36,45 @@ class Process:
         self.process.terminate()
     
 class SoundProcess(Process):
-    DEFAULT_SAMPLE_RATE = 16000
-    DEFAULT_UNIT_SAMPLES = 16384
-
-    classlist = ['speech', 'microwave', 'vacuuming', 'tv', 'eating', 'drop', 'smoke_extractor',
-                 'cooking', 'dish_clanging', 'peeing', 'chopping', 'water_flowing',
-                 'toilet_flushing', 'walking', 'brushing_teeth']
-
-    data_collection_mode = False
-    save_in_wav = False
-
-    decoder = Decoder()
-
-    class Buffer:
-        def __init__(self):
-            self.raw_buffer = []
-            self.feature_buffer = []
-
-            # Postprocess buffers
-            self.voting_buffer = []
-
-            self.index_before = None
-            self.count = np.zeros(len(SoundProcess.classlist))
-            self.reliability = np.zeros(len(SoundProcess.classlist))
-            self.tolerance = np.zeros(len(SoundProcess.classlist))
-            self.start_time = np.zeros(len(SoundProcess.classlist))
-
-            self.result_buffer = []
-        
-        def clear(self):
-            self.raw_buffer.clear()
-            self.feature_buffer.clear()
-            self.voting_buffer.clear()
-            self.result_buffer.clear()
-
-            self.index_before = None
-            self.count = np.zeros(len(SoundProcess.classlist))
-            self.reliability = np.zeros(len(SoundProcess.classlist))
-            self.tolerance = np.zeros(len(SoundProcess.classlist))
-            self.start_time = np.zeros(len(SoundProcess.classlist))
+    feature_buffer = {}
 
     def __init__(self):
         self.queue = mp.Queue()
         self.process = mp.Process(target=self._run)
 
-        self.sound_sample_rate = self.DEFAULT_SAMPLE_RATE
-        self.sound_unit_samples = self.DEFAULT_UNIT_SAMPLES
-        self.sound_frame_per_unit = 32
-        self.sound_clip_length_sec = 30
-
-        self.result_threshold = 0.6
-        self.voting_buffer_len = 7
-        self.count_threshold = 4
-
-        self.tolerance = 10
-
         self.buffer = {}
 
-        self.feature_type = 'mels'
-
-    def save_wav(self, output_path, input, sr):
-        sf.write(output_path, input, sr, 'PCM_16')
-        # print(output_path, 'saved')
-
-    def get_mfcc(self, input, sr, n_mfcc, n_mels, n_fft, n_hop):
-        input_pcm = np.array(input, dtype=np.float32)
-        mfcc = librosa.feature.mfcc(y=input_pcm, sr=sr, n_mfcc=n_mfcc, n_mels=n_mels, n_fft=n_fft, hop_length=n_hop)
-        mfcc = mfcc[:,:-1]
-        mfcc = mfcc[..., np.newaxis]
-
-        return mfcc
-
-    def voting(self, address):
-        voting_buffer = np.array(self.buffer[address].voting_buffer)
-
-        vote_result = np.zeros(len(self.classlist))
-        reliab_result = np.zeros(len(self.classlist))
-
-        result_index = np.where(voting_buffer > self.result_threshold)[1]
-        reliab_index = np.where(voting_buffer > 0)
-        reliab_index = zip(reliab_index[0], reliab_index[1])
-
-        for y in result_index:
-            vote_result[y] += 1
-        for x, y in reliab_index:
-            reliab_result[y] += voting_buffer[x,y]
-        reliab_result = reliab_result/self.voting_buffer_len
-
-        return vote_result, reliab_result
-
-    def generate_events(self, address, vote, reliab, received_time, end=False, log_path=None, time_dt=None):
-        current_buffer = self.buffer[address]
-
-        index = np.where(vote > self.count_threshold)[0]
-        
-        for idx in index:
-            if current_buffer.count[idx] == 0:
-                current_buffer.start_time[idx] = received_time
-            current_buffer.count[idx] += 1
-            current_buffer.reliability[idx] += reliab[idx]
-
-        if current_buffer.index_before is None:
-            current_buffer.index_before = index
-            return
-        
-        for idx in current_buffer.index_before:
-            if idx not in index or end:
-                if current_buffer.tolerance[idx] < self.tolerance and not end:
-                    current_buffer.tolerance[idx] += 1
-                    index = np.append(index, idx)
-                    index = np.unique(index)
-                    return
-                
-                # Event end
-                end_time = received_time
-
-                msg = {}
-                msg['event'] = self.classlist[idx]
-                msg['start_time'] = current_buffer.start_time[idx]
-                msg['end_time'] = end_time
-                msg['duration'] = (end_time-current_buffer.start_time[idx])*1000
-                msg['reliability'] = current_buffer.reliability[idx]/current_buffer.count[idx]
-                
-                if log_path is not None:
-                    with open(os.path.join(log_path, str(time_dt.strftime("%Y-%m-%d_%H"))+".txt"), 'a') as f:
-                        f.write(msg['event']+','+str(msg['start_time'])+','+str(msg['end_time'])+','+str(msg['duration'])+','+'%.2f'%msg['reliability']+'\n')
-
-                # print(msg)
-                # LogProcess.queue.put(msg)
-
-                current_buffer.start_time[idx] = 0
-                current_buffer.reliability[idx] = 0
-                current_buffer.count[idx] = 0
-                
-            else:
-                current_buffer.tolerance[idx] = 0
-
-        current_buffer.index_before = index
-
     def _run(self):
-        window_hop = int((self.sound_unit_samples * self.sound_clip_length_sec)/2)
-
         path_base = os.path.dirname(os.path.realpath(__file__))+"/data"
 
         while True:
             location, device_type, address, service_name, char_name, received_time, data = self.queue.get()
 
-            path = os.path.join(path_base, location, device_type, address, service_name)
-
-            try:
-                os.makedirs(path, exist_ok=True)
-            except:
-                pass
-
             time_dt = datetime.fromtimestamp(received_time)
+        
+            data_packet = SoundFeaturePacket.unpack(data)
 
             if address not in self.buffer:
-                self.buffer[address] = self.Buffer()
+                self.buffer[address] = []
             
-            current_buffer = self.buffer[address]
+            if data_packet.cmd == FEATURE_COLLECTION_CMD_DATA:
+                self.buffer[address].append(data_packet.data)
+            elif data_packet.cmd == FEATURE_COLLECTION_CMD_FINISH:
+                # save buffer to file
+                if len(self.buffer[address]) > 0:
+                    feature = np.array(self.buffer[address])
 
-            wav_path = os.path.join(path,"wavfiles")
-            byte_path = os.path.join(path,"bytes")
-            os.makedirs(wav_path, exist_ok=True)
-            os.makedirs(byte_path, exist_ok=True)
+                    dir_path = os.path.join(path_base, location, device_type, address, service_name, str(time_dt.strftime("%Y-%m-%d")))
+                    try:
+                        os.makedirs(dir_path, exist_ok=True)
+                    except:
+                        pass
 
-            log_path = os.path.join(path,"logs")
-            pred_path = os.path.join(path,"predictions")
-            os.makedirs(log_path, exist_ok=True)
-            os.makedirs(pred_path, exist_ok=True)
-            
-            if char_name == 'feature':
-                try:
-                    current_feature_segment = [struct.unpack('<f', data[i:i+4])[0] for i in range(0, len(data), 4)]
-                    current_buffer.feature_buffer.extend(current_feature_segment)
-                except:
-                    continue
+                    filename = str(time_dt.strftime("%H:%M:%S")+".npz")
 
-                if len(current_buffer.feature_buffer) == 48*32:
-                    feature = np.array(current_buffer.feature_buffer, dtype=np.float32).reshape(32,48)
-                    print(feature)
-                    current_buffer.clear()
+                    # save to npz
+                    np.savez(os.path.join(dir_path, filename), feature=feature)
+                    self.buffer[address] = []
             
 
 class DataProcess(Process):
