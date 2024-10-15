@@ -152,6 +152,8 @@ if __name__ == "__main__":
                         metavar=('address'))
     parser.add_argument('-f', '--feature', nargs=2, help='sound feature collection',
                         metavar=('address', 'start/stop'))
+    parser.add_argument('-t', '--train', nargs=1, help='train sound model',
+                        metavar=('address'))
     parser.add_argument('-a', '--apply', action='store_true', help='apply config file')
     parser.add_argument('-l', '--list', action='store_true', help='list registered devices')
     parser.add_argument('-q', '--quit', action='store_true', help='quit slimhub client')
@@ -181,6 +183,9 @@ if __name__ == "__main__":
 
     if args.feature:
         send_command('feature', args_dict)
+    
+    if args.train:
+        send_command('train', args_dict)
     
     if args.apply:
         send_command('apply', args_dict)

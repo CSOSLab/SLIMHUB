@@ -1,4 +1,5 @@
 import multiprocessing as mp
+import subprocess
 import asyncio
 from bleak import *
 import os
@@ -140,35 +141,6 @@ class Device:
         if char_dict != None:
             return self.get_service_by_uuid(char_dict['service'])
         return None
-    
-    async def model_send_worker(self):
-        # Sleep for a while to prevent packet loss
-        await asyncio.sleep(0.005)
-        # Send model data by chunk
-        total_chunk = self.model_size//self.model_chunk_size + 1
-
-        if self.model_seq > total_chunk:
-            send_packet = ModelPacket(cmd=MODEL_UPDATE_CMD_END)
-
-            # logging.info('%s: Model update end', self.config_dict['address'])
-
-            await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
-
-            return
-        
-        with open(self.model_path, 'rb') as f:
-            model_data = f.read()
-            model_chunk = model_data[self.model_seq*self.model_chunk_size:(self.model_seq+1)*self.model_chunk_size]
-            send_packet = ModelDataPacket(cmd=MODEL_UPDATE_CMD_DATA, seq=self.model_seq, data=model_chunk)
-
-            # logging.info('%s: Sending model data %d/%d', self.config_dict['address'], self.model_seq, total_chunk)
-            try:
-                await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
-            except Exception as e:
-                logging.warning(e)
-                self.sending_model = False
-                return
-    
 
     async def config_device(self, target, data):
         config_path = os.path.dirname(os.path.realpath(__file__))+"/programdata/config"
@@ -311,6 +283,39 @@ class Device:
         send_packet = ModelPacket(cmd=MODEL_UPDATE_CMD_START)
         await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
 
+    async def model_send_worker(self):
+        # Sleep for a while to prevent packet loss
+        await asyncio.sleep(0.005)
+        # Send model data by chunk
+        total_chunk = self.model_size//self.model_chunk_size + 1
+
+        if self.model_seq > total_chunk:
+            send_packet = ModelPacket(cmd=MODEL_UPDATE_CMD_END)
+
+            # logging.info('%s: Model update end', self.config_dict['address'])
+
+            await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
+
+            return
+        
+        with open(self.model_path, 'rb') as f:
+            model_data = f.read()
+            model_chunk = model_data[self.model_seq*self.model_chunk_size:(self.model_seq+1)*self.model_chunk_size]
+            send_packet = ModelDataPacket(cmd=MODEL_UPDATE_CMD_DATA, seq=self.model_seq, data=model_chunk)
+
+            logging.info('%s: Sending model data %d/%d', self.config_dict['address'], self.model_seq, total_chunk)
+            try:
+                await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
+            except Exception as e:
+                logging.warning(e)
+                self.sending_model = False
+                return
+    
+    async def model_train_start(self):
+        logging.info('%s: Model training start', self.config_dict['address'])
+        args = ['python3', 'training.py', self.config_dict['address']]
+        subprocess.Popen(args)
+
     async def _connect_device(self):
          # Connect and read device info
         try:
@@ -362,8 +367,10 @@ class DeviceManager:
             device = get_device_by_address(address)
 
             if device is None:
-                return str(address)+' is not registered'.encode()
-            
+                return (address+' is not registered').encode()
+            if device.is_connected == False:
+                return (address+' is not connected').encode()
+
         if cmd == 'config':
             await device.config_device(commands[2], commands[3])
             return_msg = f"address: {device.config_dict['address']}, type: {device.config_dict['type']}, name: {device.config_dict['name']}, location: {device.config_dict['location']}"
@@ -413,6 +420,10 @@ class DeviceManager:
                 return "Feature collection ended".encode()
             else:
                 return "Argment 2 must be \'start\' or \'end\'".encode()
+        
+        elif cmd == 'train':
+            await device.model_train_start()
+            return "Model training started".encode()
 
     def get_queue(self):
         return self.queue

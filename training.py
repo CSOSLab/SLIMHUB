@@ -11,6 +11,8 @@ from datetime import datetime
 import dataset_processing as dp
 
 #%%
+address = sys.argv[1]
+#%%
 base_label = np.array([
     'brushing',
     'peeing',
@@ -28,13 +30,13 @@ base_label = np.array([
 ])
 
 #%%
-model_dir = 'programdata/models'
+model_dir = os.path.join('programdata', 'models')
 base_model_path = os.path.join(model_dir, 'base_model')
 dataset_path = os.path.join(model_dir, "training_dataset.npz")
+
+domain_dir = os.path.join(model_dir, address)
 #%%
 model = tf.keras.models.load_model(base_model_path)
-model.summary()
-
 #%%
 original_dataset = np.load(dataset_path)
 print(original_dataset.files)
@@ -157,11 +159,6 @@ transfer_model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
 # 모델 요약 출력
 transfer_model.summary()
 
-#%%
-for layer in transfer_model.layers:
-    for weight in layer.weights:
-        if 'min' in weight.name or 'max' in weight.name:
-            print(f"Layer: {layer.name}, {weight.name}: {weight.numpy()}")
 # %%
 # Train the model with your data
 now = datetime.now()
@@ -178,6 +175,12 @@ print("Training time: ", datetime.now() - now)
 
 # # Train the model with your data
 # history = transfer_model.fit(x_train_all, t_train_all, validation_data=(x_val, t_val), epochs=10, batch_size=128)
+
+#%%
+# Save the model
+saved_model_dir = os.path.join(domain_dir, address)
+transfer_model.save(saved_model_dir)
+
 # %%
 rep_ds = x_train_all[:3000]
 def representative_data_gen():
@@ -196,7 +199,7 @@ converter_int8.inference_output_type = tf.int8  # or tf.uint8
 
 tflite_model_int8 = converter_int8.convert()
 
-tflite_model_int8_dir = os.path.join(model_dir, domain_name+'_int8'+'.tflite')
+tflite_model_int8_dir = os.path.join(domain_dir, address+'.tflite')
 # tflite_model_name = saved_model_name + '.tflite'
 with open(tflite_model_int8_dir, 'wb') as f:
     f.write(tflite_model_int8)
