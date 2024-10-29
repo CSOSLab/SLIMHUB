@@ -2,13 +2,13 @@ import numpy as np
 import struct
 from dataclasses import dataclass
 
-MODEL_UPDATE_CMD_START = 0
-MODEL_UPDATE_CMD_DATA = 1
-MODEL_UPDATE_CMD_END = 2
-FEATURE_COLLECTION_CMD_START = 3
-FEATURE_COLLECTION_CMD_DATA = 4
-FEATURE_COLLECTION_CMD_FINISH = 5
-FEATURE_COLLECTION_CMD_END = 6
+MODEL_UPDATE_CMD_START = 1
+MODEL_UPDATE_CMD_DATA = 2
+MODEL_UPDATE_CMD_END = 3
+FEATURE_COLLECTION_CMD_START = 4
+FEATURE_COLLECTION_CMD_DATA = 5
+FEATURE_COLLECTION_CMD_FINISH = 6
+FEATURE_COLLECTION_CMD_END = 7
 
 # Base packet class with only the cmd field
 @dataclass
@@ -53,7 +53,7 @@ class ModelDataPacket(ModelPacket):
     def pack(self) -> bytes:
         """Pack the cmd, seq, and data fields into a bytes object."""
         packet_format = '<B H 128s'
-        padded_data = self.data.ljust(128, b'\x00')  # Ensure data is 128 bytes
+        padded_data = self.data.ljust(128, b'\xFF')  # Ensure data is 128 bytes
         return struct.pack(packet_format, self.cmd, self.seq, padded_data)
 
     @classmethod

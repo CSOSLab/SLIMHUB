@@ -47,8 +47,9 @@ class Device:
         self.sending_model = False
         self.model_seq = 0
         self.model_size = 0
-        with open(self.model_path, 'rb') as f:
-            self.model_size = len(f.read())
+        if os.path.isfile(self.model_path):
+            with open(self.model_path, 'rb') as f:
+                self.model_size = len(f.read())
 
         self.collecting_feature = False
 
