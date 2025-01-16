@@ -21,6 +21,7 @@ import librosa
 
 from decoder import Decoder
 from packet import *
+from customGraphLibrary import *
     
 class Process:
     queue = None
@@ -141,7 +142,6 @@ class DataProcess(Process):
                 
                 file_msg_final = ','.join(map(str, inference_unpacked_data[:-self.num_sound_labels])) + ',' + dequantized_str
                 f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+file_msg_final+"\n")
-                    
             else:
                 return
 
@@ -153,6 +153,67 @@ class DataProcess(Process):
             
             processed_time = time.time()
             # print(address, 'DATA:', (processed_time-received_time)*1000,'ms')
+            
+class UnitspaceProcess(Process):
+    
+    debug_static_graph = CustomGraph()
+    debug_static_graph.add_edge("TOILET", "LIVING", 3)
+    debug_static_graph.add_edge("TOILET", "KITCHEN", 10)
+    debug_static_graph.add_edge("TOILET", "ROOM", 15)
+    debug_static_graph.add_edge("LIVING", "KITCHEN", 5)
+    debug_static_graph.add_edge("LIVING", "ROOM", 5)
+    debug_static_graph.add_edge("KITCHEN", "ROOM", 10)
+    
+    debug_static_graph.activate_node("LIVING")
+    
+    
+    def __init__(self):
+        
+        # super(UnitspaceProcess, self).__init__()
+        
+        # 인스턴스 변수로 debug_static_graph를 정의하고 간선 및 노드 상태 추가
+        self.debug_static_graph = CustomGraph()
+        self.debug_static_graph.add_edge("TOILET", "LIVING", 3)
+        self.debug_static_graph.add_edge("TOILET", "KITCHEN", 10)
+        self.debug_static_graph.add_edge("TOILET", "ROOM", 15)
+        self.debug_static_graph.add_edge("LIVING", "KITCHEN", 5)
+        self.debug_static_graph.add_edge("LIVING", "ROOM", 5)
+        self.debug_static_graph.add_edge("KITCHEN", "ROOM", 10)
+        
+        self.debug_static_graph.activate_node("LIVING")
+        
+        self.queue = mp.Queue()
+        self.process = mp.Process(target=self._run)
+    # Process functions ------------------------------------------------------------
+    def _unitspace_existence_estimation(self, location, device_type, address, service_name, char_name, received_time, unpacked_data_list):
+        try:
+            if service_name == "inference":
+                # print("New!!")
+                current_active_unitspace = self.debug_static_graph.get_active_nodes()
+                # print("Last active: " + str(current_active_unitspace) + ", New input: " + location)
+                
+                in_out_check = unpacked_data_list[1]
+                if in_out_check == 10:
+                    print("Signal -> " + "[ IN ]" + "to : " + location)
+                elif in_out_check == 20:
+                    print("Signal -> " + "[ OUT ]" + "from : " + location)
+                # if in_out_check == 10:
+                # 이전 활성화된 노드와 새로운 위치가 다르면 변경
+                if location not in current_active_unitspace:
+                    self.debug_static_graph.activate_node(location)
+                    self.debug_static_graph.deactivate_node(current_active_unitspace[0])
+                    print("Resident moved: " + str(current_active_unitspace[0]) + " to " + str(self.debug_static_graph.get_active_nodes()))
+                    print("Current activated unitspace : " + str(self.debug_static_graph.get_active_nodes()))
+                
+        except Exception as e:
+            print(f"Error: {e}")
+    
+    def _run(self):
+        while True:
+            location, device_type, address, service_name, char_name, received_time, unpacked_data_list = self.queue.get()
+            self._unitspace_existence_estimation(location, device_type, address, service_name, char_name, received_time, unpacked_data_list)
+            
+            processed_time = time.time()
 
 class LogProcess(Process):
     MSGQ_TYPE_DEVICE = 1

@@ -58,6 +58,7 @@ class Device:
         self.manager_queue = None
         self.sound_queue = None
         self.data_queue = None
+        self.unispace_queue = None
 
         self.user_in = False
 
@@ -124,6 +125,12 @@ class Device:
             self.check_room_status(data)
             if not self.data_queue.full():
                 self.data_queue.put([self.config_dict['location'], self.config_dict['type'], self.config_dict['address'], service_name, char_name, received_time, data])
+            if not self.unitspace_queue.full():
+                fmt = '<BBBfffffB20b'
+                unpacked_data = struct.unpack(fmt, data)
+                unpacked_data_list = list(unpacked_data)
+                if unpacked_data_list[0] == 1:
+                    self.unitspace_queue.put([self.config_dict['location'], self.config_dict['type'], self.config_dict['address'], service_name, char_name, received_time, unpacked_data_list])
     
     def _ble_disconnected_callback(self, client):
         logging.info('%s: %s disconnected', client.address, self.config_dict['type'])
@@ -316,6 +323,21 @@ class Device:
         logging.info('%s: Model training start', self.config_dict['address'])
         args = ['python3', 'training.py', self.config_dict['address']]
         subprocess.Popen(args)
+        
+    async def unitspace_existence_estimation(self):
+        await asyncio.sleep(0.005)
+        try:
+            logging.info("unitspace existence estimation start")
+            debug_data = (10, 20, 30, 40)
+            format_string = '<BBBB'
+            debug_packed_data = struct.pack(format_string, *debug_data)
+            # debug_packed_data = bytearray(debug_data, 'utf-8')
+            await self.ble_client.write_gatt_char(DEAN_UUID_INFERENCE_SEND_CHAR, debug_packed_data)
+            logging.info("unitspace existence estimation end")
+        except Exception as e:
+            logging.warning(e)
+            return
+        
 
     async def _connect_device(self):
          # Connect and read device info
@@ -425,6 +447,10 @@ class DeviceManager:
         elif cmd == 'train':
             await device.model_train_start()
             return "Model training started".encode()
+        
+        elif cmd == 'unitspace':
+            await device.unitspace_existence_estimation()
+            return "unitspace existence estimation command send".encode()
 
     def get_queue(self):
         return self.queue

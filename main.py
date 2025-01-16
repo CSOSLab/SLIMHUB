@@ -25,6 +25,8 @@ port = 6604
 
 sound_process = SoundProcess()
 data_process = DataProcess()
+unitspace_process = UnitspaceProcess()
+
 
 manager = device.DeviceManager()
 
@@ -64,6 +66,7 @@ async def main_worker(server):
                     current_device.manager_queue = manager.get_queue()
                     current_device.sound_queue = sound_process.get_queue()
                     current_device.data_queue = data_process.get_queue()
+                    current_device.unitspace_queue = unitspace_process.get_queue()
 
                 if await current_device.ble_client_start():
                     logging.info('%s connected', dev)
@@ -136,8 +139,10 @@ async def async_main():
 
         sound_process.stop()
         data_process.stop()
+        unitspace_process.stop()
         sound_process.process.join()
         data_process.process.join()
+        unitspace_process.process.join()
         
         return
 
@@ -157,6 +162,9 @@ if __name__ == "__main__":
     parser.add_argument('-a', '--apply', action='store_true', help='apply config file')
     parser.add_argument('-l', '--list', action='store_true', help='list registered devices')
     parser.add_argument('-q', '--quit', action='store_true', help='quit slimhub client')
+    
+    parser.add_argument('-us', '--unitspace', nargs=1, help='unitspace existence estimation service',
+                        metavar=('address'))
 
     if len(sys.argv)==1:
         parser.print_help(sys.stderr)
@@ -168,6 +176,7 @@ if __name__ == "__main__":
     if args.run:
         sound_process.start()
         data_process.start()
+        unitspace_process.start()
 
         asyncio.run(async_main())
         logging.info('Exiting slimhub server')
@@ -195,3 +204,6 @@ if __name__ == "__main__":
 
     if args.quit:
         send_command('quit', args_dict)
+        
+    if args.unitspace:
+        send_command('unitspace', args_dict)
