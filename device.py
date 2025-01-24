@@ -26,7 +26,7 @@ class DeviceError(Exception):
 class Device:
     enable_default = {
         'sound': ['model'],
-        'inference': ['send']
+        'inference': ['rawdata', 'predict', 'debugstr']
     }
     model_chunk_size = 128
 
@@ -93,7 +93,7 @@ class Device:
         char_name = dean_service_lookup[sender.uuid]
 
         received_time = time.time()
-
+        
         if service_name == 'sound':
             if char_name == 'model':
                 recv_packet = ModelPacket.unpack(data)
@@ -121,16 +121,22 @@ class Device:
                 elif recv_packet.cmd == FEATURE_COLLECTION_CMD_END:
                     self.collecting_feature = False
 
-        elif service_name == 'inference':   
-            self.check_room_status(data)
-            if not self.data_queue.full():
-                self.data_queue.put([self.config_dict['location'], self.config_dict['type'], self.config_dict['address'], service_name, char_name, received_time, data])
-            if not self.unitspace_queue.full():
-                fmt = '<BBBfffffB20b'
-                unpacked_data = struct.unpack(fmt, data)
-                unpacked_data_list = list(unpacked_data)
-                if unpacked_data_list[0] == 1:
-                    self.unitspace_queue.put([self.config_dict['location'], self.config_dict['type'], self.config_dict['address'], service_name, char_name, received_time, unpacked_data_list])
+        elif service_name == 'inference':
+            if char_name == 'rawdata':
+                self.check_room_status(data)
+                if not self.data_queue.full():
+                    self.data_queue.put([self.config_dict['location'], self.config_dict['type'], self.config_dict['address'], service_name, char_name, received_time, data])
+                if not self.unitspace_queue.full():
+                    fmt = '<BBBfffffB20b'
+                    unpacked_data = struct.unpack(fmt, data)
+                    unpacked_data_list = list(unpacked_data)
+                    if unpacked_data_list[0] == 1:
+                        self.unitspace_queue.put([self.config_dict['location'], self.config_dict['type'], self.config_dict['address'], service_name, char_name, received_time, unpacked_data_list])
+            elif char_name == 'predict':
+                print("WIP : mqtt service required for handling inference result")   
+            elif char_name == 'debugstr':
+                print(data)
+                
     
     def _ble_disconnected_callback(self, client):
         logging.info('%s: %s disconnected', client.address, self.config_dict['type'])

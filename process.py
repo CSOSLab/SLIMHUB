@@ -125,23 +125,26 @@ class DataProcess(Process):
 
         with open(os.path.join(dir_path, filename), mode) as f:
             if service_name == "inference":
-                if os.path.getsize(os.path.join(dir_path, filename)) == 0:
-                    f.write("time,"
-                            "GridEye,Direction,"
-                            "ENV,temp,humid,iaq,eco2,bvoc,")
-                    f.write("SOUND,"+",".join(self.sound_classlist)+"\n")
-                fmt = '<BBBfffff'+'B'+str(self.num_sound_labels)+'b'
-                
-                # required_bytes = struct.calcsize(fmt)
-                inference_unpacked_data = struct.unpack(fmt, data[:24 + self.num_sound_labels])
-                file_msg = ','.join(map(str, inference_unpacked_data))
-                
-                # +128/256
-                dequantized_values = [(value + 128) / 256 for value in inference_unpacked_data[-self.num_sound_labels:]]
-                dequantized_str = ','.join(map(str, dequantized_values))
-                
-                file_msg_final = ','.join(map(str, inference_unpacked_data[:-self.num_sound_labels])) + ',' + dequantized_str
-                f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+file_msg_final+"\n")
+                if char_name == "rawdata":
+                    if os.path.getsize(os.path.join(dir_path, filename)) == 0:
+                        f.write("time,"
+                                "GridEye,Direction,"
+                                "ENV,temp,humid,iaq,eco2,bvoc,")
+                        f.write("SOUND,"+",".join(self.sound_classlist)+"\n")
+                    fmt = '<BBBfffff'+'B'+str(self.num_sound_labels)+'b'
+                    
+                    # required_bytes = struct.calcsize(fmt)
+                    inference_unpacked_data = struct.unpack(fmt, data[:24 + self.num_sound_labels])
+                    file_msg = ','.join(map(str, inference_unpacked_data))
+                    
+                    # +128/256
+                    dequantized_values = [(value + 128) / 256 for value in inference_unpacked_data[-self.num_sound_labels:]]
+                    dequantized_str = ','.join(map(str, dequantized_values))
+                    
+                    file_msg_final = ','.join(map(str, inference_unpacked_data[:-self.num_sound_labels])) + ',' + dequantized_str
+                    f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+file_msg_final+"\n")
+                elif char_name == "debugstr":
+                    print(data)
             else:
                 return
 

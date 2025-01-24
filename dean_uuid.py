@@ -36,8 +36,11 @@ DEAN_UUID_RELAY_AAT_CHAR =              '4eab0603-6bef-11ee-b962-10012002809a'
 
 # Inference Service
 DEAN_UUID_INFERENCE_SERVICE =           '4eab0900-6bef-11ee-b962-10012002809a'
-DEAN_UUID_INFERENCE_SEND_CHAR =         '4eab0901-6bef-11ee-b962-10012002809a'
-DEAN_UUID_INFERENCE_RESERVED_CHAR =     '4eab0902-6bef-11ee-b962-10012002809a'
+DEAN_UUID_INFERENCE_RAWDATA_CHAR =      '4eab0901-6bef-11ee-b962-10012002809a'
+DEAN_UUID_INFERENCE_PREDICT_CHAR =      '4eab0902-6bef-11ee-b962-10012002809a'
+DEAN_UUID_INFERENCE_DEBUG_STRING_CHAR = '4eab0903-6bef-11ee-b962-10012002809a'
+
+# 
 
 VER_UBINOS = True
 if VER_UBINOS:
@@ -88,8 +91,9 @@ dean_service_dict = {
     },
     'inference': {
         'service':          DEAN_UUID_INFERENCE_SERVICE,
-        'send' :            DEAN_UUID_INFERENCE_SEND_CHAR,
-        'reserved' :        DEAN_UUID_INFERENCE_RESERVED_CHAR,
+        'rawdata' :         DEAN_UUID_INFERENCE_RAWDATA_CHAR,
+        'predict' :         DEAN_UUID_INFERENCE_PREDICT_CHAR,
+        'debugstr' :        DEAN_UUID_INFERENCE_DEBUG_STRING_CHAR
     }
 }
 
@@ -119,6 +123,7 @@ dean_service_lookup = {
     DEAN_UUID_RELAY_SERVICE:                'relay',
     
     DEAN_UUID_INFERENCE_SERVICE:            'inference',
-    DEAN_UUID_INFERENCE_SEND_CHAR:          'send',
-    DEAN_UUID_INFERENCE_RESERVED_CHAR:      'reserved',
+    DEAN_UUID_INFERENCE_RAWDATA_CHAR:       'rawdata',
+    DEAN_UUID_INFERENCE_PREDICT_CHAR:       'predict',
+    DEAN_UUID_INFERENCE_DEBUG_STRING_CHAR:  'debugstr',
 }
