@@ -101,28 +101,25 @@ class DataProcess(Process):
         self.queue = mp.Queue()
         self.process = mp.Process(target=self._run)
     # Process functions ------------------------------------------------------------
-    def _save_file_at_dir(self, location, device_type, address, service_name, char_name, received_time, data, mode='a'):
+    def _rawdata_result_handling_func(self, location, device_type, address, service_name, char_name, received_time, data, mode='a'):
+        
         def swapEndianness(hexstring):
             ba = bytearray.fromhex(hexstring)
             ba.reverse()
             return ba.hex()
         
         path_base = os.path.dirname(os.path.realpath(__file__))+"/data"
-
-        dir_path = os.path.join(path_base, location, device_type, address, service_name)
-
+        dir_path = os.path.join(path_base, location, device_type, address, service_name, char_name)
         try:
             os.makedirs(dir_path, exist_ok=True)
         except:
             pass
-        
         time_dt = datetime.fromtimestamp(received_time)
         filename = str(time_dt.strftime("%Y-%m-%d")+".txt")
         # def mqtt_data(f_data):
         #     f_data_i=int(f_data)
         #     f_data_d=int((f_data-int(f_data))*100000)
         #     return str("%04x"%f_data_i), str("%04x"%f_data_d)
-
         with open(os.path.join(dir_path, filename), mode) as f:
             if service_name == "inference":
                 if char_name == "rawdata":
@@ -144,15 +141,24 @@ class DataProcess(Process):
                     file_msg_final = ','.join(map(str, inference_unpacked_data[:-self.num_sound_labels])) + ',' + dequantized_str
                     f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+file_msg_final+"\n")
                 elif char_name == "debugstr":
-                    print(data)
+                    if isinstance(data, bytearray):
+                        debug_string = data.decode('utf-8')
+                    else:
+                        debug_string = str(data)
+                    if (debug_string[len(debug_string)-1] == "\n"):
+                        f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+debug_string)
+                    else :
+                        f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+debug_string+"\n")    
+                    
+                    
             else:
                 return
-
+            
     def _run(self):
         while True:            
             location, device_type, address, service_name, char_name, received_time, data = self.queue.get()
 
-            self._save_file_at_dir(location, device_type, address, service_name, char_name, received_time, data)
+            self._rawdata_result_handling_func(location, device_type, address, service_name, char_name, received_time, data)
             
             processed_time = time.time()
             # print(address, 'DATA:', (processed_time-received_time)*1000,'ms')

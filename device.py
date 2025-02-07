@@ -135,7 +135,9 @@ class Device:
             elif char_name == 'predict':
                 print("WIP : mqtt service required for handling inference result")   
             elif char_name == 'debugstr':
-                print(data)
+                if not self.data_queue.full():
+                    self.data_queue.put([self.config_dict['location'], self.config_dict['type'], self.config_dict['address'], service_name, char_name, received_time, data])
+                # print(data)
                 
     
     def _ble_disconnected_callback(self, client):
