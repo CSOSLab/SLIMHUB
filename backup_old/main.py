@@ -11,35 +11,26 @@ import socket
 import select
 import argparse
 from threading import Thread
-import multiprocessing as mp  # NEW CODE: for shared IPC queue and Manager
+# from multiprocessing import Manager
 import logging
 import signal
 
 import device
+
 from process import *
 from dean_uuid import *
 
 host = 'localhost'
 port = 6604
 
-# NEW CODE: Create shared IPC queue for inter-process communication
-ipc_queue = mp.Queue()
-# NEW CODE: Create a Manager for generating reply queues (proxy objects, picklable)
-reply_manager = mp.Manager()
-
 sound_process = SoundProcess()
 data_process = DataProcess()
-# NEW CODE: Pass the shared ipc_queue and reply_manager to UnitspaceProcess
-unitspace_process = UnitspaceProcess(ipc_queue, reply_manager)
+unitspace_process = UnitspaceProcess()
 
-# NEW CODE: Create DeviceManager with the shared ipc_queue
-manager = device.DeviceManager(ipc_queue)
 
-logging.basicConfig(
-    filename=os.path.join(os.path.dirname(os.path.realpath(__file__)), 'programdata', 'logging.log'),
-    format='%(asctime)s: %(levelname)s: %(message)s',
-    level=logging.INFO
-)
+manager = device.DeviceManager()
+
+logging.basicConfig(filename=os.path.dirname(os.path.realpath(__file__))+'/programdata/logging.log', format='%(asctime)s: %(levelname)s: %(message)s', level=logging.INFO)
 
 term_flag = False
 
@@ -72,20 +63,24 @@ async def main_worker(server):
             if current_device is None:
                 current_device = device.Device(dev)
                 if current_device.config_dict['type'] == "DE&N":
-                    current_device.manager_queue = manager.get_queue()  # remains for legacy usage if needed
+                    current_device.manager_queue = manager.get_queue()
                     current_device.sound_queue = sound_process.get_queue()
                     current_device.data_queue = data_process.get_queue()
                     current_device.unitspace_queue = unitspace_process.get_queue()
+
                 if await current_device.ble_client_start():
                     logging.info('%s connected', dev)
                 else:
                     logging.info('%s connection failed', dev)
+
             else:
                 if await current_device.ble_client_start():
                     logging.info('%s reconnected', dev)
                 else:
                     logging.info('%s reconnection failed', dev)
+
             await asyncio.sleep(0.1)
+
         await asyncio.sleep(10)
 
 async def cli_handler(reader, writer):
@@ -99,6 +94,7 @@ async def cli_handler(reader, writer):
     try:
         msg = await reader.read(1024)
         data = parse_message(msg)
+
         if data[0] == 'quit':
             logging.info('Client requested server shutdown')
             writer.write('Shutting down server'.encode())
@@ -120,7 +116,6 @@ def send_command(cmd, args_dict):
         s.connect((host, port))
     except:
         print("Slimhub server is not running")
-        import sys
         sys.exit(0)
     if type(args_dict[cmd]) == bool:
         s.send(str([cmd]).encode())
@@ -132,9 +127,8 @@ def send_command(cmd, args_dict):
 
 async def async_main():
     server = await asyncio.start_server(cli_handler, host, port)
-    # NEW CODE: Create a task for DeviceManager's IPC manager_main loop
-    manager_task = asyncio.create_task(manager.manager_main())
     main_task = asyncio.create_task(main_worker(server))
+
     try:
         async with server:
             await server.serve_forever()
@@ -142,13 +136,14 @@ async def async_main():
         pass
     finally:
         await main_task
-        manager_task.cancel()
+
         sound_process.stop()
         data_process.stop()
         unitspace_process.stop()
         sound_process.process.join()
         data_process.process.join()
         unitspace_process.process.join()
+        
         return
 
 if __name__ == "__main__":
@@ -167,12 +162,12 @@ if __name__ == "__main__":
     parser.add_argument('-a', '--apply', action='store_true', help='apply config file')
     parser.add_argument('-l', '--list', action='store_true', help='list registered devices')
     parser.add_argument('-q', '--quit', action='store_true', help='quit slimhub client')
+    
     parser.add_argument('-us', '--unitspace', nargs=1, help='unitspace existence estimation service',
                         metavar=('address'))
 
-    if len(sys.argv) == 1:
+    if len(sys.argv)==1:
         parser.print_help(sys.stderr)
-        import sys
         sys.exit(0)
 
     args = parser.parse_args()
@@ -182,6 +177,7 @@ if __name__ == "__main__":
         sound_process.start()
         data_process.start()
         unitspace_process.start()
+
         asyncio.run(async_main())
         logging.info('Exiting slimhub server')
     

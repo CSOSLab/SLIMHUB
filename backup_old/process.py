@@ -25,10 +25,8 @@ from customGraphLibrary import *
 import device
 from dean_uuid import *
 
-# OLD CODE:
-# call_device_manager = device.DeviceManager()
-# NEW CODE: DeviceManager will be created in main.py with the shared IPC queue
-
+call_device_manager = device.DeviceManager()
+    
 class Process:
     queue = None
     process = None
@@ -48,28 +46,37 @@ class SoundProcess(Process):
     def __init__(self):
         self.queue = mp.Queue()
         self.process = mp.Process(target=self._run)
+
         self.buffer = {}
 
     def _run(self):
-        path_base = os.path.join(os.path.dirname(os.path.realpath(__file__)), "data")
+        path_base = os.path.dirname(os.path.realpath(__file__))+"/data"
+
         while True:
             location, device_type, address, service_name, char_name, received_time, data = self.queue.get()
+
             time_dt = datetime.fromtimestamp(received_time)
+        
             data_packet = SoundFeaturePacket.unpack(data)
+
             if address not in self.buffer:
                 self.buffer[address] = []
+            
             if data_packet.cmd == FEATURE_COLLECTION_CMD_DATA:
                 self.buffer[address].append(data_packet.data)
             elif data_packet.cmd == FEATURE_COLLECTION_CMD_FINISH:
                 # save buffer to file
                 if len(self.buffer[address]) > 0:
                     feature = np.array(self.buffer[address])
-                    dir_path = os.path.join(path_base, location, device_type, address, service_name, time_dt.strftime("%Y-%m-%d"))
+
+                    dir_path = os.path.join(path_base, location, device_type, address, service_name, str(time_dt.strftime("%Y-%m-%d")))
                     try:
                         os.makedirs(dir_path, exist_ok=True)
                     except:
                         pass
-                    filename = time_dt.strftime("%H:%M:%S") + ".npz"
+
+                    filename = str(time_dt.strftime("%H:%M:%S")+".npz")
+
                     # save to npz
                     np.savez(os.path.join(dir_path, filename), feature=feature)
                     self.buffer[address] = []
@@ -91,55 +98,77 @@ class DataProcess(Process):
         'watering2',
         'background',
     ]
+    
     num_sound_labels = len(sound_classlist)
                  
     def __init__(self):
         self.queue = mp.Queue()
         self.process = mp.Process(target=self._run)
-    
+    # Process functions ------------------------------------------------------------
     def _rawdata_result_handling_func(self, location, device_type, address, service_name, char_name, received_time, data, mode='a'):
+        
         def swapEndianness(hexstring):
             ba = bytearray.fromhex(hexstring)
             ba.reverse()
             return ba.hex()
         
-        path_base = os.path.join(os.path.dirname(os.path.realpath(__file__)), "data")
+        path_base = os.path.dirname(os.path.realpath(__file__))+"/data"
         dir_path = os.path.join(path_base, location, device_type, address, service_name, char_name)
         try:
             os.makedirs(dir_path, exist_ok=True)
         except:
             pass
         time_dt = datetime.fromtimestamp(received_time)
-        filename = time_dt.strftime("%Y-%m-%d") + ".txt"
+        filename = str(time_dt.strftime("%Y-%m-%d")+".txt")
+        # def mqtt_data(f_data):
+        #     f_data_i=int(f_data)
+        #     f_data_d=int((f_data-int(f_data))*100000)
+        #     return str("%04x"%f_data_i), str("%04x"%f_data_d)
         with open(os.path.join(dir_path, filename), mode) as f:
             if service_name == "inference":
                 if char_name == "rawdata":
                     if os.path.getsize(os.path.join(dir_path, filename)) == 0:
-                        f.write("time,GridEye,Direction,ENV,temp,humid,iaq,eco2,bvoc,")
-                        f.write("SOUND," + ",".join(self.sound_classlist) + "\n")
-                    fmt = '<BBBfffff' + 'B' + str(self.num_sound_labels) + 'b'
+                        f.write("time,"
+                                "GridEye,Direction,"
+                                "ENV,temp,humid,iaq,eco2,bvoc,")
+                        f.write("SOUND,"+",".join(self.sound_classlist)+"\n")
+                    fmt = '<BBBfffff'+'B'+str(self.num_sound_labels)+'b'
+                    
+                    # required_bytes = struct.calcsize(fmt)
                     inference_unpacked_data = struct.unpack(fmt, data[:24 + self.num_sound_labels])
                     file_msg = ','.join(map(str, inference_unpacked_data))
+                    
+                    # +128/256
                     dequantized_values = [(value + 128) / 256 for value in inference_unpacked_data[-self.num_sound_labels:]]
                     dequantized_str = ','.join(map(str, dequantized_values))
+                    
                     file_msg_final = ','.join(map(str, inference_unpacked_data[:-self.num_sound_labels])) + ',' + dequantized_str
-                    f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S") + "," + file_msg_final + "\n")
+                    f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+file_msg_final+"\n")
                 elif char_name == "debugstr":
-                    debug_string = data.decode('utf-8') if isinstance(data, bytearray) else str(data)
-                    if debug_string.endswith("\n"):
-                        f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S") + "," + debug_string)
+                    if isinstance(data, bytearray):
+                        debug_string = data.decode('utf-8')
                     else:
-                        f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S") + "," + debug_string + "\n")
+                        debug_string = str(data)
+                    if (debug_string[len(debug_string)-1] == "\n"):
+                        f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+debug_string)
+                    else :
+                        f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S")+","+debug_string+"\n")    
+                    
+                    
             else:
                 return
             
     def _run(self):
         while True:            
             location, device_type, address, service_name, char_name, received_time, data = self.queue.get()
+
             self._rawdata_result_handling_func(location, device_type, address, service_name, char_name, received_time, data)
+            
             processed_time = time.time()
+            # print(address, 'DATA:', (processed_time-received_time)*1000,'ms')
             
 class UnitspaceProcess(Process):
+    
     debug_static_graph = CustomGraph()
     debug_static_graph.add_edge("TOILET", "LIVING", 3)
     debug_static_graph.add_edge("TOILET", "KITCHEN", 10)
@@ -147,12 +176,15 @@ class UnitspaceProcess(Process):
     debug_static_graph.add_edge("LIVING", "KITCHEN", 5)
     debug_static_graph.add_edge("LIVING", "ROOM", 5)
     debug_static_graph.add_edge("KITCHEN", "ROOM", 10)
+    
     debug_static_graph.activate_node("LIVING")
     
-    # NEW CODE: __init__ now accepts an ipc_queue and a reply_manager
-    def __init__(self, ipc_queue, reply_manager):  # NEW CODE
-        # OLD CODE:
-        # def __init__(self):
+    
+    def __init__(self):
+        
+        # super(UnitspaceProcess, self).__init__()
+        
+        # 인스턴스 변수로 debug_static_graph를 정의하고 간선 및 노드 상태 추가
         self.debug_static_graph = CustomGraph()
         self.debug_static_graph.add_edge("TOILET", "LIVING", 3)
         self.debug_static_graph.add_edge("TOILET", "KITCHEN", 10)
@@ -160,47 +192,41 @@ class UnitspaceProcess(Process):
         self.debug_static_graph.add_edge("LIVING", "KITCHEN", 5)
         self.debug_static_graph.add_edge("LIVING", "ROOM", 5)
         self.debug_static_graph.add_edge("KITCHEN", "ROOM", 10)
+        
         self.debug_static_graph.activate_node("LIVING")
+        
         self.queue = mp.Queue()
         self.process = mp.Process(target=self._run)
-        self.ipc_queue = ipc_queue  # NEW CODE: store shared IPC queue
-        self.reply_manager = reply_manager  # NEW CODE: store the Manager for reply queues
-    
+    # Process functions ------------------------------------------------------------
     def send_device_manager_process_command_with_address(self, msg):
         data = msg.decode()
     
     async def _unitspace_existence_estimation(self, location, device_type, address, service_name, char_name, received_time, unpacked_data_list):
         try:
             if service_name == "inference":
+                # print("New!!")
                 current_active_unitspace = self.debug_static_graph.get_active_nodes()
+                # print("Last active: " + str(current_active_unitspace) + ", New input: " + location)
+                
                 in_out_check = unpacked_data_list[1]
                 if in_out_check == 10:
-                    print("Signal -> [ IN ] to: " + location)
+                    print("Signal -> " + "[ IN ]" + "to : " + location)
                 elif in_out_check == 20:
-                    print("Signal -> [ OUT ] from: " + location)
+                    print("Signal -> " + "[ OUT ]" + "from : " + location)
+                # if in_out_check == 10:
+                # 이전 활성화된 노드와 새로운 위치가 다르면 변경
                 if location not in current_active_unitspace:
                     self.debug_static_graph.activate_node(location)
                     self.debug_static_graph.deactivate_node(current_active_unitspace[0])
-                    print("Resident moved: {} to {}".format(current_active_unitspace[0], self.debug_static_graph.get_active_nodes()))
-                    print("Current activated unitspace: " + str(self.debug_static_graph.get_active_nodes()))
+                    print("Resident moved: " + str(current_active_unitspace[0]) + " to " + str(self.debug_static_graph.get_active_nodes()))
+                    print("Current activated unitspace : " + str(self.debug_static_graph.get_active_nodes()))
                 
-                # OLD CODE:
-                # write_command = list()
-                # write_command.append(str('internal_processing'))
-                # write_command.append((str(address)))
-                # print("write_command")
-                # await call_device_manager.process_command(write_command)
-                # print("done")
-                
-                # NEW CODE: Send command via IPC to DeviceManager using a reply queue from reply_manager
-                write_command = ['internal_processing', str(address)]
-                reply_queue = self.reply_manager.Queue()  # NEW CODE: Use reply_manager.Queue() instead of mp.Queue()
-                print("Sending IPC command:", write_command)
-                loop = asyncio.get_running_loop()
-                self.ipc_queue.put((write_command, reply_queue))
-                # Wait for reply without blocking the event loop
-                result = await loop.run_in_executor(None, reply_queue.get)
-                print("Received IPC response:", result)
+                write_command = list()
+                write_command.append(str('internal_processing'))
+                write_command.append((str(address)))
+                print("write_command")
+                await call_device_manager.process_command(write_command)
+                print("done")
                 
         except Exception as e:
             print(f"Error: {e}")
@@ -209,6 +235,7 @@ class UnitspaceProcess(Process):
         while True:
             location, device_type, address, service_name, char_name, received_time, unpacked_data_list = self.queue.get()
             asyncio.run(self._unitspace_existence_estimation(location, device_type, address, service_name, char_name, received_time, unpacked_data_list))
+            
             processed_time = time.time()
 
 class LogProcess(Process):
@@ -237,6 +264,7 @@ class LogProcess(Process):
             self.id = id
             self.passwd = passwd
             self.client = mqtt.Client("")
+
             self.sh_id = sh_id
 
         def connect(self):
@@ -251,12 +279,19 @@ class LogProcess(Process):
 
     def __init__(self):
         self.process = mp.Process(target=self._run)
+
+        # print("Mqtt On")
         self.mqtt = self.Mqtt("155.230.186.52", 1883, "csosMember", "csos!1234", "HMK0H001")
+        # self.mqtt.connect()
         self.msgq = self.Msgq(6604, sysv_ipc.IPC_CREAT)
     
     def _run(self):
         while True:
             msg_dict = self.queue.get()
+
             msg_dict.update(SH_ID=self.mqtt.sh_id)
+
             mqtt_msg_json = json.dumps(msg_dict)
-            self.mqtt.publish("/CSOS/ADL/ADLDATA", mqtt_msg_json)
+            # print("[MQTT] : " + mqtt_msg_json)
+
+            self.mqtt.publish("/CSOS/ADL/ADLDATA",mqtt_msg_json)
