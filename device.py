@@ -52,7 +52,7 @@ class Device:
         self.manager_queue = None
         self.sound_queue = None
         self.data_queue = None
-        self.unispace_queue = None
+        self.unitspace_queue = None
         self.user_in = False
         self.enable = Device.enable_default
         self.is_connected = False
@@ -447,14 +447,20 @@ class DeviceManager:
             return b''
         
     def get_queue(self):
-        # OLD CODE: return self.queue
-        # NEW CODE: Not used with IPC (the ipc_queue is provided externally)
+        # NEW CODE: Not used with IPC since ipc_queue is provided externally
         pass
     
     async def manager_main(self):
+        import queue  # MODIFIED: import to catch queue.Empty
         loop = asyncio.get_running_loop()  # NEW CODE
         while True:
-            # NEW CODE: Wait for a command from the ipc_queue (using run_in_executor to avoid blocking)
-            command, reply_queue = await loop.run_in_executor(None, self.ipc_queue.get)
+            try:
+                # MODIFIED: Use timeout so that we can check for sentinel commands
+                command, reply_queue = await loop.run_in_executor(None, self.ipc_queue.get, True, 1)
+            except queue.Empty:
+                continue
+            if command == ['shutdown']:
+                break  # MODIFIED: break on shutdown command
             result = await self.process_command(command)
-            reply_queue.put(result)
+            if reply_queue is not None:
+                reply_queue.put(result)

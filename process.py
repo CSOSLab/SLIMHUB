@@ -15,6 +15,7 @@ import tensorflow_lite as tflite
 
 import paho.mqtt.client as mqtt
 import sysv_ipc
+import queue  # MODIFIED: for Empty exception in manager_main (if needed)
 
 import soundfile as sf
 import librosa
@@ -25,10 +26,7 @@ from customGraphLibrary import *
 import device
 from dean_uuid import *
 
-# OLD CODE:
-# call_device_manager = device.DeviceManager()
-# NEW CODE: DeviceManager will be created in main.py with the shared IPC queue
-
+# Base Process class
 class Process:
     queue = None
     process = None
@@ -40,8 +38,10 @@ class Process:
         self.process.start()
     
     def stop(self):
-        self.process.terminate()
-    
+        # MODIFIED: Instead of terminating the process, send a shutdown signal via the queue
+        if self.queue is not None:
+            self.queue.put(None)
+
 class SoundProcess(Process):
     feature_buffer = {}
 
@@ -53,7 +53,10 @@ class SoundProcess(Process):
     def _run(self):
         path_base = os.path.join(os.path.dirname(os.path.realpath(__file__)), "data")
         while True:
-            location, device_type, address, service_name, char_name, received_time, data = self.queue.get()
+            item = self.queue.get()
+            if item is None:  # MODIFIED: shutdown signal detected
+                break
+            location, device_type, address, service_name, char_name, received_time, data = item
             time_dt = datetime.fromtimestamp(received_time)
             data_packet = SoundFeaturePacket.unpack(data)
             if address not in self.buffer:
@@ -134,26 +137,21 @@ class DataProcess(Process):
                 return
             
     def _run(self):
-        while True:            
-            location, device_type, address, service_name, char_name, received_time, data = self.queue.get()
+        while True:
+            item = self.queue.get()
+            if item is None:  # MODIFIED: shutdown signal detected
+                break
+            location, device_type, address, service_name, char_name, received_time, data = item
             self._rawdata_result_handling_func(location, device_type, address, service_name, char_name, received_time, data)
             processed_time = time.time()
             
 class UnitspaceProcess(Process):
-    debug_static_graph = CustomGraph()
-    debug_static_graph.add_edge("TOILET", "LIVING", 3)
-    debug_static_graph.add_edge("TOILET", "KITCHEN", 10)
-    debug_static_graph.add_edge("TOILET", "ROOM", 15)
-    debug_static_graph.add_edge("LIVING", "KITCHEN", 5)
-    debug_static_graph.add_edge("LIVING", "ROOM", 5)
-    debug_static_graph.add_edge("KITCHEN", "ROOM", 10)
-    debug_static_graph.activate_node("LIVING")
+    debug_static_graph = None  # will be initialized in __init__
     
     # NEW CODE: __init__ now accepts an ipc_queue and a reply_manager
     def __init__(self, ipc_queue, reply_manager):  # NEW CODE
-        # OLD CODE:
-        # def __init__(self):
-        self.debug_static_graph = CustomGraph()
+        # Initialize the static graph
+        self.debug_static_graph = CustomGraph()  # MODIFIED: reinitialize here
         self.debug_static_graph.add_edge("TOILET", "LIVING", 3)
         self.debug_static_graph.add_edge("TOILET", "KITCHEN", 10)
         self.debug_static_graph.add_edge("TOILET", "ROOM", 15)
@@ -165,9 +163,6 @@ class UnitspaceProcess(Process):
         self.process = mp.Process(target=self._run)
         self.ipc_queue = ipc_queue  # NEW CODE: store shared IPC queue
         self.reply_manager = reply_manager  # NEW CODE: store the Manager for reply queues
-    
-    def send_device_manager_process_command_with_address(self, msg):
-        data = msg.decode()
     
     async def _unitspace_existence_estimation(self, location, device_type, address, service_name, char_name, received_time, unpacked_data_list):
         try:
@@ -184,14 +179,6 @@ class UnitspaceProcess(Process):
                     print("Resident moved: {} to {}".format(current_active_unitspace[0], self.debug_static_graph.get_active_nodes()))
                     print("Current activated unitspace: " + str(self.debug_static_graph.get_active_nodes()))
                 
-                # OLD CODE:
-                # write_command = list()
-                # write_command.append(str('internal_processing'))
-                # write_command.append((str(address)))
-                # print("write_command")
-                # await call_device_manager.process_command(write_command)
-                # print("done")
-                
                 # NEW CODE: Send command via IPC to DeviceManager using a reply queue from reply_manager
                 write_command = ['internal_processing', str(address)]
                 reply_queue = self.reply_manager.Queue()  # NEW CODE: Use reply_manager.Queue() instead of mp.Queue()
@@ -207,7 +194,10 @@ class UnitspaceProcess(Process):
     
     def _run(self):
         while True:
-            location, device_type, address, service_name, char_name, received_time, unpacked_data_list = self.queue.get()
+            item = self.queue.get()
+            if item is None:  # MODIFIED: shutdown signal detected
+                break
+            location, device_type, address, service_name, char_name, received_time, unpacked_data_list = item
             asyncio.run(self._unitspace_existence_estimation(location, device_type, address, service_name, char_name, received_time, unpacked_data_list))
             processed_time = time.time()
 
