@@ -152,6 +152,14 @@ async def async_main():
         pass
     finally:
         await main_task
+        
+        from device import connected_devices
+        for dev in list(connected_devices.values()):
+            try:
+                await dev.remove()
+            except Exception as e:
+                logging.warning(f"Error disconnected device {dev.config_dict['address']} : {e}")
+                await asyncio.sleep(1)
 
         # MODIFIED: Gracefully shutdown child processes via their stop() (which now sends shutdown sentinel)
         sound_process.stop()      # now sends shutdown signal to SoundProcess
