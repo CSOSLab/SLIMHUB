@@ -108,6 +108,10 @@ class Device:
                     logging.info('%s: Model update completed', self.config_dict['address'])
                     self.sending_model = False
                     self.model_seq = 0
+                elif recv_packet.cmd == MODEL_UPDATE_CMD_FAIL:
+                    logging.info('%s: Model update failed', self.config_dict['address'])
+                    self.sending_model = False
+                    self.model_seq = 0
 
                 elif recv_packet.cmd == FEATURE_COLLECTION_CMD_START:
                     self.collecting_feature = True
