@@ -63,16 +63,16 @@ class Device:
     async def remove(self):
         try:
             await self.ble_client.disconnect()
-        except:
-            pass
+        except Exception as e:
+            logging.warning("Error during disconnect: %s", e)
         try:
             address = self.config_dict.get("address")
             if address in connected_devices:
                 connected_devices.pop(address, None)
-        except:
-            pass
-        finally:
-            del self
+        except Exception as e:
+            logging.warning("Error during device removal: %s", e)
+        # finally:
+        #     del self
         
     def check_room_status(self, data):
         value = struct.unpack('B', data[0:1])[0]
@@ -86,12 +86,19 @@ class Device:
             if char_name == 'model':
                 recv_packet = ModelPacket.unpack(data)
                 if recv_packet.cmd == MODEL_UPDATE_CMD_START:
-                    self.sending_model = True
-                    asyncio.create_task(self.model_send_worker())
+                    #NEW CODE: Prevent duplicate worker tasks for model update
+                    if not self.sending_model:
+                        self.sending_model = True
+                        asyncio.create_task(self.model_send_worker())
+                    #OLD CODE:
+                    # self.sending_model = True
+                    # asyncio.create_task(self.model_send_worker())
                 elif recv_packet.cmd == MODEL_UPDATE_CMD_DATA:
                     recv_packet = ModelAckPacket.unpack(data)
                     self.model_seq = recv_packet.seq + 1
-                    asyncio.create_task(self.model_send_worker())
+                    #NEW CODE: Do not spawn additional worker if one is running
+                    #OLD CODE:
+                    # asyncio.create_task(self.model_send_worker())
                 elif recv_packet.cmd == MODEL_UPDATE_CMD_END:
                     logging.info('%s: Model update completed', self.config_dict['address'])
                     self.sending_model = False
@@ -100,10 +107,14 @@ class Device:
                     self.collecting_feature = True
                 elif recv_packet.cmd == FEATURE_COLLECTION_CMD_DATA:
                     if not self.data_queue.full():
-                        self.sound_queue.put([self.config_dict['location'], self.config_dict['type'], self.config_dict['address'], service_name, char_name, received_time, data])
+                        self.sound_queue.put([self.config_dict['location'], self.config_dict['type'],
+                                               self.config_dict['address'], service_name, char_name,
+                                               received_time, data])
                 elif recv_packet.cmd == FEATURE_COLLECTION_CMD_FINISH:
                     if not self.data_queue.full():
-                        self.sound_queue.put([self.config_dict['location'], self.config_dict['type'], self.config_dict['address'], service_name, char_name, received_time, data])
+                        self.sound_queue.put([self.config_dict['location'], self.config_dict['type'],
+                                               self.config_dict['address'], service_name, char_name,
+                                               received_time, data])
                 elif recv_packet.cmd == FEATURE_COLLECTION_CMD_END:
                     self.collecting_feature = False
 
@@ -111,25 +122,32 @@ class Device:
             if char_name == 'rawdata':
                 self.check_room_status(data)
                 if not self.data_queue.full():
-                    self.data_queue.put([self.config_dict['location'], self.config_dict['type'], self.config_dict['address'], service_name, char_name, received_time, data])
+                    self.data_queue.put([self.config_dict['location'], self.config_dict['type'],
+                                         self.config_dict['address'], service_name, char_name,
+                                         received_time, data])
                 if not self.unitspace_queue.full():
                     fmt = '<BBBfffffB20b'
                     unpacked_data = struct.unpack(fmt, data)
                     unpacked_data_list = list(unpacked_data)
                     if unpacked_data_list[0] == 1:
-                        self.unitspace_queue.put([self.config_dict['location'], self.config_dict['type'], self.config_dict['address'], service_name, char_name, received_time, unpacked_data_list])
+                        self.unitspace_queue.put([self.config_dict['location'], self.config_dict['type'],
+                                                  self.config_dict['address'], service_name, char_name,
+                                                  received_time, unpacked_data_list])
             elif char_name == 'predict':
                 print("WIP : mqtt service required for handling inference result")   
             elif char_name == 'debugstr':
                 if not self.data_queue.full():
-                    self.data_queue.put([self.config_dict['location'], self.config_dict['type'], self.config_dict['address'], service_name, char_name, received_time, data])
+                    self.data_queue.put([self.config_dict['location'], self.config_dict['type'],
+                                         self.config_dict['address'], service_name, char_name,
+                                         received_time, data])
         
     def _ble_disconnected_callback(self, client):
         logging.info('%s: %s disconnected', client.address, self.config_dict['type'])
         self.model_seq = 0
         self.sending_model = False
         self.is_connected = False
-
+        #NEW CODE: Optionally, trigger additional cleanup or reconnection logic here.
+    
     def get_service_by_uuid(self, service_uuid):
         for service in self.ble_client.services:
             if service.uuid == service_uuid:
@@ -138,7 +156,7 @@ class Device:
     
     def get_service_by_name(self, service_name):
         char_dict = dean_service_dict.get(service_name, None)
-        if char_dict != None:
+        if char_dict is not None:
             return self.get_service_by_uuid(char_dict['service'])
         return None
 
@@ -165,8 +183,10 @@ class Device:
                 self.config_dict['name'] = json_data['name']
                 self.config_dict['location'] = json_data['location']
             try:
-                await self.ble_client.write_gatt_char(DEAN_UUID_CONFIG_NAME_CHAR, bytearray(self.config_dict['name'], 'utf-8'))
-                await self.ble_client.write_gatt_char(DEAN_UUID_CONFIG_LOCATION_CHAR, bytearray(self.config_dict['location'], 'utf-8'))
+                await self.ble_client.write_gatt_char(DEAN_UUID_CONFIG_NAME_CHAR,
+                                                      bytearray(self.config_dict['name'], 'utf-8'))
+                await self.ble_client.write_gatt_char(DEAN_UUID_CONFIG_LOCATION_CHAR,
+                                                      bytearray(self.config_dict['location'], 'utf-8'))
                 return True
             except Exception as e:
                 logging.warning(e)
@@ -189,10 +209,12 @@ class Device:
             if char_uuid is not None:
                 try:
                     await self.ble_client.start_notify(char_uuid, self._ble_notify_callback)
-                    logging.info('%s: Characteristic %s %s %s', self.config_dict['address'], service_name, char_name, 'enabled')
+                    logging.info('%s: Characteristic %s %s %s',
+                                 self.config_dict['address'], service_name, char_name, 'enabled')
                     return True
-                except:
-                    logging.info('%s: Characteristic %s %s %s', self.config_dict['address'], service_name, char_name, 'activation failed')
+                except Exception as e:
+                    logging.info('%s: Characteristic %s %s %s - %s',
+                                 self.config_dict['address'], service_name, char_name, 'activation failed', e)
                     return False
 
     async def deactivate_characteristic(self, service_name, char_name):
@@ -203,14 +225,19 @@ class Device:
             if char_uuid is not None:
                 try:
                     await self.ble_client.stop_notify(char_uuid)
-                    logging.info('%s: Characteristic %s %s %s', self.config_dict['address'], service_name, char_name, 'disabled')
+                    logging.info('%s: Characteristic %s %s %s',
+                                 self.config_dict['address'], service_name, char_name, 'disabled')
                     return True
-                except:
-                    logging.info('%s: Characteristic %s %s %s', self.config_dict['address'], service_name, char_name, 'deactivation failed')
+                except Exception as e:
+                    logging.info('%s: Characteristic %s %s %s - %s',
+                                 self.config_dict['address'], service_name, char_name, 'deactivation failed', e)
                     return False
 
     async def activate_service(self, service_name):
         service = self.get_service_by_name(service_name)
+        if service is None:
+            logging.warning("%s: Service %s not found", self.config_dict['address'], service_name)
+            return
         char_list = []
         for characteristic in service.characteristics:
             current_char = dean_service_lookup.get(characteristic.uuid, None)
@@ -223,10 +250,10 @@ class Device:
                 try:
                     await self.activate_characteristic(service_name, char_name)
                 except Exception as e:
-                    logging.warning(e)
-                    pass
-                await asyncio.sleep(0.1)
-
+                    logging.warning("Failed to activate %s %s: %s", service_name, char_name, e)
+                #NEW CODE: Increase delay for service activation stability
+                await asyncio.sleep(0.2)  # NEW CODE (was 0.1)
+    
     async def deactivate_service(self, service_name):
         service = self.get_service_by_name(service_name)
         for characteristic in service.characteristics:
@@ -273,23 +300,26 @@ class Device:
         await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
 
     async def model_send_worker(self):
-        await asyncio.sleep(0.005)
+        #NEW CODE: Increase sleep duration for BLE stability (was 0.005)
+        await asyncio.sleep(0.01)  # NEW CODE
         total_chunk = self.model_size // self.model_chunk_size + 1
         if self.model_seq > total_chunk:
             send_packet = ModelPacket(cmd=MODEL_UPDATE_CMD_END)
             await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
+            #NEW CODE: Reset flags upon completion
+            self.sending_model = False  # NEW CODE
+            self.model_seq = 0         # NEW CODE
             return
-        with open(self.model_path, 'rb') as f:
-            model_data = f.read()
+        try:
+            with open(self.model_path, 'rb') as f:
+                model_data = f.read()
             model_chunk = model_data[self.model_seq * self.model_chunk_size:(self.model_seq + 1) * self.model_chunk_size]
             send_packet = ModelDataPacket(cmd=MODEL_UPDATE_CMD_DATA, seq=self.model_seq, data=model_chunk)
             logging.info('%s: Sending model data %d/%d', self.config_dict['address'], self.model_seq, total_chunk)
-            try:
-                await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
-            except Exception as e:
-                logging.warning(e)
-                self.sending_model = False
-                return
+            await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
+        except Exception as e:
+            logging.warning("Model send error: %s", e)
+            self.sending_model = False
     
     async def model_train_start(self):
         logging.info('%s: Model training start', self.config_dict['address'])
@@ -299,33 +329,41 @@ class Device:
     async def unitspace_existence_simulation(self):
         await asyncio.sleep(0.005)
         try:
-            logging.info("unitspace existence estimation start")
+            # logging.info("unitspace existence simulation start")
             debug_data = (10, 20, 30, 40)
             format_string = '<BBBB'
             debug_packed_data = struct.pack(format_string, *debug_data)
             await self.ble_client.write_gatt_char(DEAN_UUID_GRIDEYE_PREDICTION_CHAR, debug_packed_data)
-            logging.info("unitspace existence estimation end")
+            # logging.info("unitspace existence simulation end")
         except Exception as e:
             logging.warning(e)
             return
         
-    async def unitspace_existence_estimation(self):
+    async def unitspace_existence_estimation(self, command_string):
         await asyncio.sleep(0.005)
         try:
-            logging.info("unitspace existence estimation start")
-            true_str = b"true"
-            packed_validity_packet = struct.pack("4s", true_str)
+            # logging.info("unitspace existence estimation start")
+            byte_string = command_string.encode("utf-8")
+            packed_validity_packet = struct.pack(f"{len(byte_string)}s", byte_string)
+            
             await self.ble_client.write_gatt_char(DEAN_UUID_GRIDEYE_PREDICTION_CHAR, packed_validity_packet)
-            logging.info("unitspace existence estimation end")
+            # logging.info("unitspace existence estimation end")
         except Exception as e:
             logging.warning(e)
             return
         
-
+    async def unitspace_existenc_intial_configuration(self, command_string):
+        await asyncio.sleep(0.005)
+        
     async def _connect_device(self):
         try:
             await self.ble_client.connect()
-            await asyncio.sleep(0.1)
+            #NEW CODE: Wait for services to be discovered (up to ~1 second)
+            for _ in range(10):  # Wait up to 1 second in 0.1초 간격
+                if self.ble_client.services:
+                    break
+                await asyncio.sleep(0.1)
+            #OLD CODE: await asyncio.sleep(0.1)
             config_service = self.get_service_by_uuid(DEAN_UUID_CONFIG_SERVICE)
             if not await self.load_config():
                 if config_service is not None:
@@ -338,7 +376,7 @@ class Device:
             if cts is not None:
                 await self.sync_current_time()
         except Exception as e:
-            logging.warning(e)
+            logging.warning("Error in _connect_device: %s", e)
             raise DeviceError("Device connection failed")
 
     async def _ble_worker(self):
@@ -352,16 +390,24 @@ class Device:
             logging.warning(e)
             await self.remove()
             return False
-            
+    
     async def ble_client_start(self):
-        return await self._ble_worker()
+        retry_count = 3
+        for attempt in range(retry_count):
+            try:
+                return await self._ble_worker()
+            except DeviceError as e:
+                logging.warning(f"{self.config_dict['address']}: Connection failed, retrying... ({attempt + 1}/{retry_count})")
+                await asyncio.sleep(2)  # 2초 후 재시도
+        logging.error(f"{self.config_dict['address']}: Failed to connect after {retry_count} attempts")
+        return False    
+            
+    # async def ble_client_start(self):
+    #     return await self._ble_worker()
 
 # NEW CODE: Modified DeviceManager with IPC support
 class DeviceManager:
     def __init__(self, ipc_queue):  # NEW CODE: Added ipc_queue parameter
-        # OLD CODE:
-        # def __init__(self):
-        #     self.queue = asyncio.Queue()
         self.ipc_queue = ipc_queue  # NEW CODE: Store the shared IPC queue
 
     async def process_command(self, commands):
@@ -396,7 +442,7 @@ class DeviceManager:
                 else:
                     return f"{commands[1]}: characteristic {commands[3]} {commands[4]} disable failed".encode()
             else:
-                return "Argment 2 must be 'enable' or 'disable'".encode()
+                return "Argument 2 must be 'enable' or 'disable'".encode()
         
         elif cmd == 'list':
             return_msg = f"{'Address':<20}{'Type':<10}{'Name':<15}{'Location':<15}{'Connected':<10}\n"
@@ -427,7 +473,7 @@ class DeviceManager:
                 await device_obj.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
                 return "Feature collection ended".encode()
             else:
-                return "Argment 2 must be 'start' or 'end'".encode()
+                return "Argument 2 must be 'start' or 'end'".encode()
         
         elif cmd == 'train':
             await device_obj.model_train_start()
@@ -435,7 +481,7 @@ class DeviceManager:
         
         elif cmd == 'internal_processing':
             print('internal processing')
-            await device_obj.unitspace_existence_estimation()
+            await device_obj.unitspace_existence_estimation(commands[2])
             return "Internal processing completed".encode()
         
         elif cmd == 'unitspace':

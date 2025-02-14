@@ -147,6 +147,8 @@ class DataProcess(Process):
             
 class UnitspaceProcess(Process):
     debug_static_graph = None  # will be initialized in __init__
+    residents_house_graph = None
+    connected_devices_unitspace_process = {}
     
     # NEW CODE: __init__ now accepts an ipc_queue and a reply_manager
     def __init__(self, ipc_queue, reply_manager):  # NEW CODE
@@ -163,31 +165,60 @@ class UnitspaceProcess(Process):
         self.process = mp.Process(target=self._run)
         self.ipc_queue = ipc_queue  # NEW CODE: store shared IPC queue
         self.reply_manager = reply_manager  # NEW CODE: store the Manager for reply queues
+        
+        self.residents_house_graph = CustomGraph()
     
     async def _unitspace_existence_estimation(self, location, device_type, address, service_name, char_name, received_time, unpacked_data_list):
         try:
             if service_name == "inference":
-                current_active_unitspace = self.debug_static_graph.get_active_nodes()
-                in_out_check = unpacked_data_list[1]
-                if in_out_check == 10:
-                    print("Signal -> [ IN ] to: " + location)
-                elif in_out_check == 20:
-                    print("Signal -> [ OUT ] from: " + location)
-                if location not in current_active_unitspace:
-                    self.debug_static_graph.activate_node(location)
-                    self.debug_static_graph.deactivate_node(current_active_unitspace[0])
-                    print("Resident moved: {} to {}".format(current_active_unitspace[0], self.debug_static_graph.get_active_nodes()))
-                    print("Current activated unitspace: " + str(self.debug_static_graph.get_active_nodes()))
+                print(self.connected_devices_unitspace_process)
+                if not address in self.connected_devices_unitspace_process:
+                    # Frist unitspace moving signal from DEAN node
+                    if location == "undefined":
+                        print("Unitspace signal from undefined dean node : " + str(address))
+                    self.connected_devices_unitspace_process.update({address, location})
+                    received_signal = unpacked_data_list[1]
+                    write_command = ['internal_processing' , str(address), "default_action"]
+                    if received_signal == 10:      # 10 is "in" signal
+                        print("signal -> [ IN ] to " + location)
+                        write_command = ['internal_processing' , str(address), "strong_enter"]
+                    elif received_signal == 20:
+                        print("signal -> [ OUT ] to " + location)
+                        write_command = ['internal_processing' , str(address), "strong_exit"]
+                    reply_queue = self.replay_manager.Queue()       # Send ble write command to device queue
+                    loop = asyncio.get_running_loop()
+                    self.ipc_queue.put((write_command, reply_queue))
+                    result = await loop.run_in_executor(None, reply_queue.get)
+                    if result is None:
+                        print("IPC response not reached.")
+                else:
+                    if location == "undefined":
+                        print("Unitspace signal from undefined dean node")
+                
+                
+                # current_active_unitspace = self.debug_static_graph.get_active_nodes()
+                # in_out_check = unpacked_data_list[1]        
+                # if in_out_check == 10:
+                #     print("Signal -> [ IN ] to: " + location)
+                # elif in_out_check == 20:
+                #     print("Signal -> [ OUT ] from: " + location)
+                # if location not in current_active_unitspace:
+                #     self.debug_static_graph.activate_node(location)
+                #     self.debug_static_graph.deactivate_node(current_active_unitspace[0])
+                #     print("Resident moved: {} to {}".format(current_active_unitspace[0], self.debug_static_graph.get_active_nodes()))
+                #     print("Current activated unitspace: " + str(self.debug_static_graph.get_active_nodes()))
                 
                 # NEW CODE: Send command via IPC to DeviceManager using a reply queue from reply_manager
-                write_command = ['internal_processing', str(address)]
+                write_command = ['internal_processing', str(address), "strong_true"]
                 reply_queue = self.reply_manager.Queue()  # NEW CODE: Use reply_manager.Queue() instead of mp.Queue()
+                # logging.info("Sending IPC command: ", write_command)
                 print("Sending IPC command:", write_command)
                 loop = asyncio.get_running_loop()
                 self.ipc_queue.put((write_command, reply_queue))
                 # Wait for reply without blocking the event loop
                 result = await loop.run_in_executor(None, reply_queue.get)
                 print("Received IPC response:", result)
+                # logging.info("Received IPC reponse: ", result)
                 
         except Exception as e:
             print(f"Error: {e}")
