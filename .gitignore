@@ -2,3 +2,7 @@ data/
 __pycache__/
 Pipfile
 Pipfile.lock
+nohup.out
+programdata/logging.log
+programdata/config
+slimhub-env/
