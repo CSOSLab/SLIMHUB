@@ -148,8 +148,9 @@ class DataProcess(Process):
 class UnitspaceProcess(Process):
     debug_static_graph = None  # will be initialized in __init__
     residents_house_graph = None
-    connected_devices_unitspace_process = {}
-    
+    # [New code] dictionary를 address: (location, state) 형식으로 관리 (state: True=active, False=inactive)
+    connected_devices_unitspace_process = {}  
+
     # NEW CODE: __init__ now accepts an ipc_queue and a reply_manager
     def __init__(self, ipc_queue, reply_manager):  # NEW CODE
         # Initialize the static graph
@@ -163,72 +164,72 @@ class UnitspaceProcess(Process):
         self.debug_static_graph.activate_node("LIVING")
         self.queue = mp.Queue()
         self.process = mp.Process(target=self._run)
-        self.ipc_queue = ipc_queue  # NEW CODE: store shared IPC queue
-        self.reply_manager = reply_manager  # NEW CODE: store the Manager for reply queues
-        
+        self.ipc_queue = ipc_queue                          # store shared IPC queue
+        self.reply_manager = reply_manager                  # store the Manager for reply queues
+
         self.residents_house_graph = CustomGraph()
-    
+
     async def _unitspace_existence_estimation(self, location, device_type, address, service_name, char_name, received_time, unpacked_data_list):
         try:
             if service_name == "inference":
-                print(self.connected_devices_unitspace_process)
-                if not address in self.connected_devices_unitspace_process:
-                    # Frist unitspace moving signal from DEAN node
-                    if location == "undefined":
-                        print("Unitspace signal from undefined dean node : " + str(address))
-                    self.connected_devices_unitspace_process.update({address, location})
-                    received_signal = unpacked_data_list[1]
-                    write_command = ['internal_processing' , str(address), "default_action"]
-                    if received_signal == 10:      # 10 is "in" signal
-                        print("signal -> [ IN ] to " + location)
-                        write_command = ['internal_processing' , str(address), "strong_enter"]
-                    elif received_signal == 20:
-                        print("signal -> [ OUT ] to " + location)
-                        write_command = ['internal_processing' , str(address), "strong_exit"]
-                    reply_queue = self.replay_manager.Queue()       # Send ble write command to device queue
-                    loop = asyncio.get_running_loop()
-                    self.ipc_queue.put((write_command, reply_queue))
-                    result = await loop.run_in_executor(None, reply_queue.get)
-                    if result is None:
-                        print("IPC response not reached.")
+                # [New code] 체크: 디바이스가 초기 등록된 경우와 이미 등록된 경우로 구분
+                if address not in self.connected_devices_unitspace_process:
+                    # [New code] 초기 연결: dictionary에 추가 및 state를 active(True)로 설정, weak_enter 전송
+                    self.connected_devices_unitspace_process[address] = (location, True)
+                    write_command = ['internal_processing', str(address), "weak_enter"]
+                    print(f"[New code] Initial connection for {address}: sending weak_enter")
                 else:
-                    if location == "undefined":
-                        print("Unitspace signal from undefined dean node")
+                    # [New code] 이미 등록되어 있는 경우: 기존 state 확인
+                    stored_location, current_state = self.connected_devices_unitspace_process[address]
+                    received_signal = unpacked_data_list[1]
+                    # 조건에 따라 명령 및 state 업데이트
+                    if current_state:  # active 상태
+                        if received_signal == 10:
+                            # (b) active 상태에서 signal 10 → 잘못된 in 신호 → weak_exit 전송, state inactive로 변경
+                            write_command = ['internal_processing', str(address), "weak_exit"]
+                            self.connected_devices_unitspace_process[address] = (stored_location, False)
+                            print(f"[New code] Active unitspace {address}: received signal 10, sending weak_exit and setting inactive")
+                        elif received_signal == 20:
+                            # (e) active 상태에서 signal 20 → strong_exit 전송, state inactive로 변경
+                            write_command = ['internal_processing', str(address), "strong_exit"]
+                            self.connected_devices_unitspace_process[address] = (stored_location, False)
+                            print(f"[New code] Active unitspace {address}: received signal 20, sending strong_exit and setting inactive")
+                        else:
+                            # [New code] 그 외 값이면 default_action (또는 아무 동작 없음)
+                            write_command = ['internal_processing', str(address), "default_action"]
+                            print(f"[New code] Active unitspace {address}: received signal {received_signal}, sending default_action")
+                    else:  # inactive 상태
+                        if received_signal == 10:
+                            # (c) inactive 상태에서 signal 10 → strong_enter 전송, state active로 변경
+                            write_command = ['internal_processing', str(address), "strong_enter"]
+                            self.connected_devices_unitspace_process[address] = (stored_location, True)
+                            print(f"[New code] Inactive unitspace {address}: received signal 10, sending strong_enter and setting active")
+                        elif received_signal == 20:
+                            # (d) inactive 상태에서 signal 20 → weak_enter 전송, state active로 변경
+                            write_command = ['internal_processing', str(address), "weak_enter"]
+                            self.connected_devices_unitspace_process[address] = (stored_location, True)
+                            print(f"[New code] Inactive unitspace {address}: received signal 20, sending weak_enter and setting active")
+                        else:
+                            write_command = ['internal_processing', str(address), "default_action"]
+                            print(f"[New code] Inactive unitspace {address}: received signal {received_signal}, sending default_action")
                 
-                
-                # current_active_unitspace = self.debug_static_graph.get_active_nodes()
-                # in_out_check = unpacked_data_list[1]        
-                # if in_out_check == 10:
-                #     print("Signal -> [ IN ] to: " + location)
-                # elif in_out_check == 20:
-                #     print("Signal -> [ OUT ] from: " + location)
-                # if location not in current_active_unitspace:
-                #     self.debug_static_graph.activate_node(location)
-                #     self.debug_static_graph.deactivate_node(current_active_unitspace[0])
-                #     print("Resident moved: {} to {}".format(current_active_unitspace[0], self.debug_static_graph.get_active_nodes()))
-                #     print("Current activated unitspace: " + str(self.debug_static_graph.get_active_nodes()))
-                
-                # NEW CODE: Send command via IPC to DeviceManager using a reply queue from reply_manager
-                write_command = ['internal_processing', str(address), "strong_true"]
-                reply_queue = self.reply_manager.Queue()  # NEW CODE: Use reply_manager.Queue() instead of mp.Queue()
-                # logging.info("Sending IPC command: ", write_command)
-                print("Sending IPC command:", write_command)
+                # [New code] 명령 전송
+                reply_queue = self.reply_manager.Queue()  # NEW CODE: 올바른 reply_manager 사용
+                print("[New code] Sending IPC command:", write_command)
                 loop = asyncio.get_running_loop()
                 self.ipc_queue.put((write_command, reply_queue))
-                # Wait for reply without blocking the event loop
                 result = await loop.run_in_executor(None, reply_queue.get)
-                print("Received IPC response:", result)
-                # logging.info("Received IPC reponse: ", result)
-                
+                print("[New code] Received IPC response:", result)
         except Exception as e:
             print(f"Error: {e}")
-    
+
     def _run(self):
         while True:
             item = self.queue.get()
             if item is None:  # MODIFIED: shutdown signal detected
                 break
             location, device_type, address, service_name, char_name, received_time, unpacked_data_list = item
+            # [Old code] was using asyncio.run(...) each time
             asyncio.run(self._unitspace_existence_estimation(location, device_type, address, service_name, char_name, received_time, unpacked_data_list))
             processed_time = time.time()
 
