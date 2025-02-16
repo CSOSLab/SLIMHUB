@@ -11,8 +11,6 @@ import json
 import logging
 from dataclasses import dataclass
 
-import tensorflow_lite as tflite
-
 import paho.mqtt.client as mqtt
 import sysv_ipc
 import queue  # MODIFIED: for Empty exception in manager_main (if needed)
