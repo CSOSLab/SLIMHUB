@@ -425,9 +425,6 @@ class DeviceManager:
         cmd = commands[0]
         if len(commands) > 1:
             address = commands[1]
-            print(address)
-            print(len(address))
-            print(type(address))
             device_obj = get_device_by_address(address)
             if device_obj is None:
                 print("something wrong 1")
@@ -491,7 +488,6 @@ class DeviceManager:
             return "Model training started".encode()
         
         elif cmd == 'internal_processing':
-            print('internal processing')
             await device_obj.unitspace_existence_estimation(commands[2])
             return "Internal processing completed".encode()
         

@@ -69,8 +69,6 @@ async def main_worker(server):
             return
 
         target_devices = await scan()
-        print(target_devices)
-        print("***" + (str(len(target_devices))))
         if target_devices is None:
             await asyncio.sleep(10)
             continue
