@@ -61,3 +61,41 @@ class CustomGraph:
         print("    ", "  ".join(node_names))
         for i, row in enumerate(graph_matrix):
             print(f"{node_names[i]} ", row)
+            
+    # [New code] 간략하게 활성 노드 상태만 표시하는 함수 (display_graph_lite)
+    def display_graph_lite(self):
+        node_names = list(self.nodes.keys())
+        if not node_names:
+            print("No nodes.")
+            return
+        # 최대 노드 이름 길이 결정 (각 열의 최소 폭)
+        max_width = max(len(name) for name in node_names)
+        # 양쪽에 여유 공간을 위해 추가 폭 (예: 4)
+        col_width = max_width + 4
+        # 헤더: 각 노드 이름을 가운데 정렬하여 출력
+        header_cells = [f"[ {name:^{col_width-2}} ]" for name in node_names]
+        header = " ".join(header_cells)
+        # 상태 행: 각 노드가 활성이면 "***", 아니면 "--"를 가운데 정렬하여 출력
+        status_cells = []
+        for name in node_names:
+            status_symbol = "***" if self.nodes[name].activated else "--"
+            status_cells.append(f"[ {status_symbol:^{col_width-2}} ]")
+        status = " ".join(status_cells)
+        print(header)
+        print(status)
+            
+            
+
+    # [New code] 단 하나의 노드만 활성화하도록 업데이트하는 메서드
+    def set_active_node(self, name):
+        # 모든 노드를 비활성화한 후, 지정된 노드만 활성화
+        current_active_node = self.get_active_nodes()
+        if name == current_active_node:
+            node.deactivate()
+        else:
+            for node in self.nodes.values():
+                node.deactivate()
+            if name in self.nodes:
+                self.nodes[name].activate()
+            else:
+                print(f"[New code] Node '{name}' not found in the graph.")
