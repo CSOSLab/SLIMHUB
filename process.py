@@ -377,7 +377,7 @@ class LogProcess(Process):
             self.port = port
             self.id = id
             self.passwd = passwd
-            self.client = mqtt.Client("")
+            self.client = mqtt.Client()
 
         def connect(self):
             self.client.username_pw_set(username=self.id, password=self.passwd)
