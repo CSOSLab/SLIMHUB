@@ -8,6 +8,7 @@ import numpy as np
 import time
 import struct
 import json
+import re
 import logging
 from dataclasses import dataclass
 
@@ -128,12 +129,23 @@ class DataProcess(Process):
                     file_msg_final = ','.join(map(str, inference_unpacked_data[:-self.num_sound_labels])) + ',' + dequantized_str
                     f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S") + "," + file_msg_final + "\n")
                 elif char_name == "debugstr":
-                    debug_string = data.decode('utf-8') if isinstance(data, bytearray) else str(data)
-                    debug_dict = json.loads(debug_string)
-                    debug_dict["timestamp"] = time_dt.strftime("%Y-%m-%d %H:%M:%S")
-                    
-                    json.dump(debug_dict, f, ensure_ascii=False)
-                    f.write("\n")
+                    try:
+                        debug_string = data.decode('utf-8') if isinstance(data, bytearray) else str(data)
+                        debug_dict = json.loads(debug_string)
+                        debug_dict["timestamp"] = time_dt.strftime("%Y-%m-%d %H:%M:%S")
+                        
+                        json.dump(debug_dict, f, ensure_ascii=False)
+                        f.write("\n")
+                    except json.JSONDecodeError as e:
+                        debug_string = data.decode('utf-8') if isinstance(data, bytearray) else str(data)
+                        if debug_string.endswith("\n"):
+                            f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S") + "," + debug_string)
+                        else:
+                            f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S") + "," + debug_string + "\n")
+                        # logging.log(f"JSONDecodeError: {e}")
+                        # logging.log(f"Invalid JSON: {repr(debug_string)}")
+                        
+                        
             else:
                 return
             
@@ -423,11 +435,15 @@ class LogProcess(Process):
             time_dt = datetime.fromtimestamp(received_time)
 
             if char_name == "debugstr":
-                debug_string = data.decode('utf-8') if isinstance(data, bytearray) else str(data)
-                debug_dict = json.loads(debug_string)
-                debug_dict["timestamp"] = time_dt.strftime("%Y-%m-%d %H:%M:%S")
+                try: 
+                    debug_string = data.decode('utf-8') if isinstance(data, bytearray) else str(data)
+                    debug_dict = json.loads(debug_string)
+                    debug_dict["timestamp"] = time_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-                mqtt_dict = create_message()
+                    mqtt_dict = create_message()
+                except json.JSONDecodeError as e:
+                    logging.log(f"JSONDecodeError: {e}")
+                    logging.log(f"Invalid JSON: {repr(debug_string)}")
                 
         # while True:
         #     msg_dict = self.queue.get()
