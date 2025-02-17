@@ -24,6 +24,8 @@ from customGraphLibrary import *
 import device
 from dean_uuid import *
 
+import uuid
+
 # Base Process class
 class Process:
     queue = None
@@ -127,10 +129,11 @@ class DataProcess(Process):
                     f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S") + "," + file_msg_final + "\n")
                 elif char_name == "debugstr":
                     debug_string = data.decode('utf-8') if isinstance(data, bytearray) else str(data)
-                    if debug_string.endswith("\n"):
-                        f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S") + "," + debug_string)
-                    else:
-                        f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S") + "," + debug_string + "\n")
+                    debug_dict = json.loads(debug_string)
+                    debug_dict["timestamp"] = time_dt.strftime("%Y-%m-%d %H:%M:%S")
+                    
+                    json.dump(debug_dict, f, ensure_ascii=False)
+                    f.write("\n")
             else:
                 return
             
@@ -235,8 +238,6 @@ class LogProcess(Process):
     MSGQ_TYPE_ENV = 2
     MSGQ_TYPE_SOUND = 3
 
-    queue = mp.Queue()
-
     class Msgq():
         def __init__(self, key_t, flag):
             self.key_t = key_t
@@ -250,13 +251,12 @@ class LogProcess(Process):
             self.MessageQueue.receive()
 
     class Mqtt():
-        def __init__(self, ip, port, id, passwd, sh_id):
+        def __init__(self, ip, port, id, passwd):
             self.ip = ip
             self.port = port
             self.id = id
             self.passwd = passwd
             self.client = mqtt.Client("")
-            self.sh_id = sh_id
 
         def connect(self):
             self.client.username_pw_set(username=self.id, password=self.passwd)
@@ -270,12 +270,46 @@ class LogProcess(Process):
 
     def __init__(self):
         self.process = mp.Process(target=self._run)
-        self.mqtt = self.Mqtt("155.230.186.52", 1883, "csosMember", "csos!1234", "HMK0H001")
+        self.queue = mp.Queue()
+        self.mqtt = self.Mqtt("155.230.186.52", 1883, "csosMember", "csos!1234")
         self.msgq = self.Msgq(6604, sysv_ipc.IPC_CREAT)
-    
+
+    def get_mac_address():
+        mac = uuid.getnode()
+        return ':'.join(['{:02X}'.format((mac >> i) & 0xff) for i in range(0, 6 * 8, 8)][::-1])
+
     def _run(self):
-        while True:
-            msg_dict = self.queue.get()
-            msg_dict.update(SH_ID=self.mqtt.sh_id)
-            mqtt_msg_json = json.dumps(msg_dict)
-            self.mqtt.publish("/CSOS/ADL/ADLDATA", mqtt_msg_json)
+         def create_message(category, owner, location, device, activity, action, patient, level):
+             return {
+                "TIMESTAMP": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "CATEGORY": category,
+                "OWNER": owner,
+                "KEY": self.get_mac_address(),
+                "LOCATION": location,
+                "DEVICE": device,
+                "ACTIVITY": activity,
+                "ACTION": action,
+                "PATIENT": patient,
+                "LEVEL": level
+            }
+         
+         while True:
+            item = self.queue.get()
+            if item is None:  # MODIFIED: shutdown signal detected
+                break
+            location, device_type, address, service_name, char_name, received_time, data = item
+
+            time_dt = datetime.fromtimestamp(received_time)
+
+            if char_name == "debugstr":
+                debug_string = data.decode('utf-8') if isinstance(data, bytearray) else str(data)
+                debug_dict = json.loads(debug_string)
+                debug_dict["timestamp"] = time_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+                mqtt_dict = create_message()
+                
+        # while True:
+        #     msg_dict = self.queue.get()
+        #     msg_dict.update(SH_ID=self.mqtt.sh_id)
+        #     mqtt_msg_json = json.dumps(msg_dict)
+        #     self.mqtt.publish("/CSOS/ADL/ADLDATA", mqtt_msg_json)

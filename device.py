@@ -53,6 +53,8 @@ class Device:
         self.sound_queue = None
         self.data_queue = None
         self.unitspace_queue = None
+        self.log_queue = None
+
         self.user_in = False
         self.enable = Device.enable_default
         self.is_connected = False
@@ -111,12 +113,12 @@ class Device:
                 elif recv_packet.cmd == FEATURE_COLLECTION_CMD_START:
                     self.collecting_feature = True
                 elif recv_packet.cmd == FEATURE_COLLECTION_CMD_DATA:
-                    if not self.data_queue.full():
+                    if not self.sound_queue.full():
                         self.sound_queue.put([self.config_dict['location'], self.config_dict['type'],
                                                self.config_dict['address'], service_name, char_name,
                                                received_time, data])
                 elif recv_packet.cmd == FEATURE_COLLECTION_CMD_FINISH:
-                    if not self.data_queue.full():
+                    if not self.sound_queue.full():
                         self.sound_queue.put([self.config_dict['location'], self.config_dict['type'],
                                                self.config_dict['address'], service_name, char_name,
                                                received_time, data])
@@ -142,6 +144,10 @@ class Device:
                 print("WIP : mqtt service required for handling inference result")   
             elif char_name == 'debugstr':
                 if not self.data_queue.full():
+                    self.data_queue.put([self.config_dict['location'], self.config_dict['type'],
+                                         self.config_dict['address'], service_name, char_name,
+                                         received_time, data])
+                if not self.log_queue.full():
                     self.data_queue.put([self.config_dict['location'], self.config_dict['type'],
                                          self.config_dict['address'], service_name, char_name,
                                          received_time, data])

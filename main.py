@@ -34,6 +34,8 @@ data_process = DataProcess()
 # Pass the shared ipc_queue and reply_manager to UnitspaceProcess
 unitspace_process = UnitspaceProcess(ipc_queue, reply_manager)
 
+log_process = LogProcess()
+
 # NEW CODE: Create DeviceManager with the shared ipc_queue
 manager = device.DeviceManager(ipc_queue)
 
@@ -82,6 +84,7 @@ async def main_worker(server):
                     current_device.sound_queue = sound_process.get_queue()
                     current_device.data_queue = data_process.get_queue()
                     current_device.unitspace_queue = unitspace_process.get_queue()
+                    current_device.log_queue = log_process.get_queue()
                 if await current_device.ble_client_start():
                     logging.info('%s connected', dev)
                 else:
