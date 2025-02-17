@@ -15,11 +15,66 @@ import multiprocessing as mp  # NEW CODE: for shared IPC queue and Manager
 import logging
 import sys
 import signal
+import uuid
 
 import device
 
 from process import *
 from dean_uuid import *
+
+# Retrieve MAC address
+def get_mac_address():
+    mac = uuid.getnode()
+    return ':'.join(['{:02X}'.format((mac >> i) & 0xff) for i in range(0, 6 * 8, 8)][::-1])
+
+# Default configuration
+hub_config_dict = {
+    'address': get_mac_address(),
+    'type': 'slimhub',
+    'owner': None,
+    'name': None,
+}
+
+# Configuration file path
+config_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "programdata")
+os.makedirs(config_dir, exist_ok=True)
+config_file = os.path.join(config_dir, 'config.json')
+
+# Load or create configuration
+def load_or_create_config():
+    if os.path.exists(config_file):
+        try:
+            with open(config_file, "r", encoding="utf-8") as f:
+                loaded_config = json.load(f)
+                
+                # Ensure required fields exist
+                loaded_config.setdefault("address", hub_config_dict["address"])
+                hub_config_dict.update(loaded_config)
+
+            logging.info("Existing configuration loaded: %s", hub_config_dict)
+        except json.JSONDecodeError:
+            logging.warning("JSON file is corrupted. Using default configuration.")
+            save_config()
+    else:
+        save_config()
+        logging.info("New config.json file created: %s", hub_config_dict)
+
+# Save configuration
+def save_config():
+    with open(config_file, "w", encoding="utf-8") as f:
+        json.dump(hub_config_dict, f, indent=4, ensure_ascii=False)
+
+# Update configuration field
+def update_config(key, value):
+    if key in hub_config_dict:
+        hub_config_dict[key] = value
+        save_config()
+        logging.info("Updated %s to %s", key, value)
+    else:
+        logging.warning("Invalid config key: %s", key)
+
+# Execute configuration loading
+load_or_create_config()
 
 host = 'localhost'
 port = 6604
@@ -198,6 +253,7 @@ if __name__ == "__main__":
     parser.add_argument('-q', '--quit', action='store_true', help='quit slimhub client')
     parser.add_argument('-us', '--unitspace', nargs=1, help='unitspace existence estimation service',
                         metavar=('address'))
+    parser.add_argument('-hc', '--hubconfig', nargs=2, help='Update hub configuration', metavar=('key', 'value'))
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
@@ -235,3 +291,5 @@ if __name__ == "__main__":
         send_command('quit', args_dict)
     if args.unitspace:
         send_command('unitspace', args_dict)
+    if args.hubconfig:
+        update_config(args.hubconfig[0], args.hubconfig[1])
