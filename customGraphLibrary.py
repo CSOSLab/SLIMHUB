@@ -88,10 +88,11 @@ class CustomGraph:
 
     # [New code] 단 하나의 노드만 활성화하도록 업데이트하는 메서드
     def set_active_node(self, name):
-        # 모든 노드를 비활성화한 후, 지정된 노드만 활성화
-        current_active_node = self.get_active_nodes()
-        if name == current_active_node:
-            node.deactivate()
+        active_nodes = self.get_active_nodes()  # 활성화된 노드 이름의 리스트
+        # [New code] 만약 새 노드가 이미 활성 상태라면, 토글 방식으로 비활성화
+        if name in active_nodes:
+            self.nodes[name].deactivate()
+            print(f"[New code] Node '{name}' was active and now deactivated.")
         else:
             for node in self.nodes.values():
                 node.deactivate()
