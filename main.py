@@ -22,6 +22,33 @@ import device
 from process import *
 from dean_uuid import *
 
+
+
+host = 'localhost'
+port = 6604
+
+# NEW CODE: Create shared IPC queue for inter-process communication
+ipc_queue = mp.Queue()
+# NEW CODE: Create a Manager for generating reply queues (picklable proxy objects)
+reply_manager = mp.Manager()
+
+sound_process = SoundProcess()
+data_process = DataProcess()
+# Pass the shared ipc_queue and reply_manager to UnitspaceProcess
+unitspace_process = UnitspaceProcess(ipc_queue, reply_manager)
+
+log_process = LogProcess()
+
+# NEW CODE: Create DeviceManager with the shared ipc_queue
+manager = device.DeviceManager(ipc_queue)
+
+logging.basicConfig(
+    filename=os.path.join(os.path.dirname(os.path.realpath(__file__)), 'programdata', 'logging.log'),
+    format='%(asctime)s: %(levelname)s: %(message)s',
+    level=logging.INFO
+)
+
+
 # Retrieve MAC address
 def get_mac_address():
     mac = uuid.getnode()
@@ -75,30 +102,6 @@ def update_config(key, value):
 
 # Execute configuration loading
 load_or_create_config()
-
-host = 'localhost'
-port = 6604
-
-# NEW CODE: Create shared IPC queue for inter-process communication
-ipc_queue = mp.Queue()
-# NEW CODE: Create a Manager for generating reply queues (picklable proxy objects)
-reply_manager = mp.Manager()
-
-sound_process = SoundProcess()
-data_process = DataProcess()
-# Pass the shared ipc_queue and reply_manager to UnitspaceProcess
-unitspace_process = UnitspaceProcess(ipc_queue, reply_manager)
-
-log_process = LogProcess()
-
-# NEW CODE: Create DeviceManager with the shared ipc_queue
-manager = device.DeviceManager(ipc_queue)
-
-logging.basicConfig(
-    filename=os.path.join(os.path.dirname(os.path.realpath(__file__)), 'programdata', 'logging.log'),
-    format='%(asctime)s: %(levelname)s: %(message)s',
-    level=logging.INFO
-)
 
 # NEW CODE: Use an asyncio Event for quit command handling
 quit_event = asyncio.Event()
