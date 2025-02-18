@@ -148,7 +148,7 @@ class Device:
                                          self.config_dict['address'], service_name, char_name,
                                          received_time, data])
                 if not self.log_queue.full():
-                    self.data_queue.put([self.config_dict['location'], self.config_dict['type'],
+                    self.log_queue.put([self.config_dict['location'], self.config_dict['type'],
                                          self.config_dict['address'], service_name, char_name,
                                          received_time, data])
         
