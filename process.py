@@ -366,6 +366,21 @@ class UnitspaceProcess(Process):
 #             asyncio.run(self._unitspace_existence_estimation(location, device_type, address, service_name, char_name, received_time, unpacked_data_list))
 #             processed_time = time.time()
 
+# 사운드 클래스 리스트
+sound_classlist = [
+    'airutils',
+    'hitting',
+    'microwave',
+    'speech',
+    'tv',
+    'watering1',
+    'watering2',
+    'background',
+    'coffee1',
+    'coffee2',
+    'purifier',
+]
+
 class LogProcess(Process):
     MSGQ_TYPE_DEVICE = 1
     MSGQ_TYPE_ENV = 2
@@ -402,18 +417,19 @@ class LogProcess(Process):
             self.client.disconnect()
 
     def __init__(self):
+        super().__init__()
         self.process = mp.Process(target=self._run)
         self.queue = mp.Queue()
         self.mqtt = self.Mqtt("155.230.186.52", 1883, "csosMember", "csos!1234")
         self.msgq = self.Msgq(6604, sysv_ipc.IPC_CREAT)
 
-    def get_mac_address():
+    def get_mac_address(self):
         mac = uuid.getnode()
         return ':'.join(['{:02X}'.format((mac >> i) & 0xff) for i in range(0, 6 * 8, 8)][::-1])
 
     def _run(self):
-         def create_message(category, owner, location, device, activity, action, patient, level):
-             return {
+        def create_message(category, owner, location, device, activity, action, patient, level):
+            return {
                 "TIMESTAMP": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "CATEGORY": category,
                 "OWNER": owner,
@@ -425,26 +441,86 @@ class LogProcess(Process):
                 "PATIENT": patient,
                 "LEVEL": level
             }
-         
-         while True:
+
+        while True:
             item = self.queue.get()
-            if item is None:  # MODIFIED: shutdown signal detected
-                break
+ 
             location, device_type, address, service_name, char_name, received_time, data = item
 
             time_dt = datetime.fromtimestamp(received_time)
 
+            # 경로 설정
+            filename = time_dt.strftime("%Y-%m-%d") + ".txt"
+            path_base = os.path.join(os.path.dirname(os.path.realpath(__file__)), "data")
+            dir_path = os.path.join(path_base, location, device_type, address, service_name, "display")
+
+            # 디렉터리 생성
+            os.makedirs(dir_path, exist_ok=True)
+
+            # 디버그 문자열 처리
             if char_name == "debugstr":
-                try: 
+                try:
                     debug_string = data.decode('utf-8') if isinstance(data, bytearray) else str(data)
                     debug_dict = json.loads(debug_string)
                     debug_dict["timestamp"] = time_dt.strftime("%Y-%m-%d %H:%M:%S")
+                    timestamp = debug_dict["timestamp"]
 
-                    mqtt_dict = create_message()
+                    log_message = ""
+                    
+                    # SOUND 이벤트 처리 (ID 1과 7 무시)
+                    if debug_dict['type'] == 'DEBUG' and debug_dict['event'] == 'SOUND':
+                        sound_id = debug_dict.get('id', -1)
+                        if sound_id not in (1, 7):  # ID 0과 7 무시
+                            label = sound_classlist[sound_id] if 0 <= sound_id < len(sound_classlist) else "Unknown Sound"
+                            log_message = f"{timestamp}  [EVENT] - Sound '{label}' was detected\n"
+
+                    # ENV 이벤트 처리
+                    elif debug_dict['type'] == 'DEBUG' and debug_dict['event'] == 'ENV':
+                        env_id = debug_dict.get('id', 'N/A')
+                        count = debug_dict.get('count', 0)
+                        log_message = f"{timestamp}  [EVENT] - ENV id '{env_id}' was detected\n"
+                    
+                    # ENTER 이벤트 처리
+                    elif debug_dict['type'] == 'DEBUG' and debug_dict['event'] == 'ENTER':
+                        value = debug_dict.get('value', 0)
+                        log_message = f"{timestamp}  [EVENT] - ENTER value: {value}\n"
+
+                    # EXIT 이벤트 처리
+                    elif debug_dict['type'] == 'DEBUG' and debug_dict['event'] == 'EXIT':
+                        value = debug_dict.get('value', 0)
+                        log_message = f"{timestamp}  [EVENT] - EXIT value: {value}\n"
+
+                    # INFERENCE 처리
+                    elif debug_dict['type'] == 'INFERENCE':
+                        status = debug_dict.get('status', '')
+                        adl = debug_dict.get('ADL', 'N/A')
+                        sequence = debug_dict.get('sequence', 'N/A')
+                        truth = debug_dict.get('truth', 0.0)
+                        missing = debug_dict.get('missing', 'None')
+
+                        if status == "PRE-DETECT":
+                            log_message = f"{timestamp}  [INFERENCE] PRE-DETECT ADL: {adl}, sequence: {sequence}, truth: {truth:.2f}, missing: {missing}\n"
+
+                        elif status == "COMPLETE":
+                            log_message = f"{timestamp}  [INFERENCE] COMPLETE ADL: {adl}, sequence: {sequence}, truth: {truth:.2f}, missing: {missing}\n"
+
+                    # 로그 파일에 기록
+                    if log_message:
+                        with open(os.path.join(dir_path, filename), 'a') as f:
+                            f.write(log_message)
+
                 except json.JSONDecodeError as e:
-                    logging.log(f"JSONDecodeError: {e}")
-                    logging.log(f"Invalid JSON: {repr(debug_string)}")
-                
+                    logging.error(f"JSONDecodeError: {e}")
+                    logging.error(f"Invalid JSON: {repr(debug_string)}")
+                except IndexError as e:
+                    logging.error(f"IndexError: {e} - Sound ID out of range")
+                except KeyError as e:
+                    logging.error(f"KeyError: {e}")
+                except Exception as e:
+                    logging.error(f"Unexpected error: {e}")
+
+                # mqtt_dict = create_message()
+            
         # while True:
         #     msg_dict = self.queue.get()
         #     msg_dict.update(SH_ID=self.mqtt.sh_id)

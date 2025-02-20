@@ -226,10 +226,12 @@ async def async_main():
         sound_process.stop()      # now sends shutdown signal to SoundProcess
         data_process.stop()       # now sends shutdown signal to DataProcess
         unitspace_process.stop()  # now sends shutdown signal to UnitspaceProcess
+        log_process.stop()
 
         sound_process.process.join()
         data_process.process.join()
         unitspace_process.process.join()
+        log_process.join()
         manager_task.cancel()
         await asyncio.gather(manager_task, return_exceptions=True)
         reply_manager.shutdown()
@@ -272,6 +274,7 @@ if __name__ == "__main__":
         sound_process.start()
         data_process.start()
         unitspace_process.start()
+        log_process.start()
         try:
             asyncio.run(async_main())
         except KeyboardInterrupt:
