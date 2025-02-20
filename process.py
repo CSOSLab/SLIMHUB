@@ -111,7 +111,7 @@ class DataProcess(Process):
         'coffee2',
         'purifier',
     ]
-    num_sound_labels_kitchen = len(sound_classlist)
+    num_sound_labels = len(sound_classlist)
                  
     def __init__(self):
         self.queue = mp.Queue()
