@@ -80,22 +80,38 @@ class SoundProcess(Process):
             
 
 class DataProcess(Process):
+    # sound_classlist = [
+    #     'brushing',
+    #     'peeing',
+    #     'flushing',
+    #     'afterflushing',
+    #     'airutils',
+    #     'hitting',
+    #     'microwave',
+    #     'cooking',
+    #     'speech',
+    #     'tv',
+    #     'watering1',
+    #     'watering2',
+    #     'background',
+    # ]
+    # num_sound_labels = len(sound_classlist)
+    
+    # these are kitchen-base sound class list
     sound_classlist = [
-        'brushing',
-        'peeing',
-        'flushing',
-        'afterflushing',
         'airutils',
         'hitting',
         'microwave',
-        'cooking',
         'speech',
         'tv',
         'watering1',
         'watering2',
         'background',
+        'coffee1',
+        'coffee2',
+        'purifier',
     ]
-    num_sound_labels = len(sound_classlist)
+    num_sound_labels_kitchen = len(sound_classlist)
                  
     def __init__(self):
         self.queue = mp.Queue()
