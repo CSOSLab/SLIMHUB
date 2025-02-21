@@ -397,6 +397,14 @@ sound_classlist = [
     'purifier',
 ]
 
+env_list = [
+    'temperature',
+    'humidity',
+    'IAQ',
+    'CO2',
+    'bVOC',
+]
+
 class LogProcess(Process):
     MSGQ_TYPE_DEVICE = 1
     MSGQ_TYPE_ENV = 2
@@ -492,9 +500,9 @@ class LogProcess(Process):
 
                     # ENV 이벤트 처리
                     elif debug_dict['type'] == 'DEBUG' and debug_dict['event'] == 'ENV':
-                        env_id = debug_dict.get('id', 'N/A')
-                        count = debug_dict.get('count', 0)
-                        log_message = f"{timestamp}  [EVENT] - ENV id '{env_id}' was detected\n"
+                        env_id = debug_dict.get('id', -1)
+                        label = env_list[env_id] if 0 <= env_id < len(env_list) else "N/A"
+                        log_message = f"{timestamp}  [EVENT] - '{label}' event was detected\n"
                     
                     # ENTER 이벤트 처리
                     elif debug_dict['type'] == 'DEBUG' and debug_dict['event'] == 'ENTER':
