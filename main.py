@@ -231,7 +231,7 @@ async def async_main():
         sound_process.process.join()
         data_process.process.join()
         unitspace_process.process.join()
-        log_process.join()
+        log_process.process.join()
         manager_task.cancel()
         await asyncio.gather(manager_task, return_exceptions=True)
         reply_manager.shutdown()
