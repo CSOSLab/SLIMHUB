@@ -1,5 +1,6 @@
+tensorflow==2.13.0
+tensorflow-model-optimization==0.8.0
 bleak
 librosa
-tensorflow
 paho-mqtt
 sysv-ipc

@@ -88,19 +88,13 @@ class Device:
             if char_name == 'model':
                 recv_packet = ModelPacket.unpack(data)
                 if recv_packet.cmd == MODEL_UPDATE_CMD_START:
-                    #NEW CODE: Prevent duplicate worker tasks for model update
                     if not self.sending_model:
                         self.sending_model = True
                         asyncio.create_task(self.model_send_worker())
-                    #OLD CODE:
-                    # self.sending_model = True
-                    # asyncio.create_task(self.model_send_worker())
                 elif recv_packet.cmd == MODEL_UPDATE_CMD_DATA:
                     recv_packet = ModelAckPacket.unpack(data)
                     self.model_seq = recv_packet.seq + 1
-                    #NEW CODE: Do not spawn additional worker if one is running
-                    #OLD CODE:
-                    # asyncio.create_task(self.model_send_worker())
+                    asyncio.create_task(self.model_send_worker())
                 elif recv_packet.cmd == MODEL_UPDATE_CMD_END:
                     logging.info('%s: Model update completed', self.config_dict['address'])
                     self.sending_model = False
@@ -157,7 +151,6 @@ class Device:
         self.model_seq = 0
         self.sending_model = False
         self.is_connected = False
-        #NEW CODE: Optionally, trigger additional cleanup or reconnection logic here.
     
     def get_service_by_uuid(self, service_uuid):
         for service in self.ble_client.services:
@@ -311,15 +304,10 @@ class Device:
         await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
 
     async def model_send_worker(self):
-        #NEW CODE: Increase sleep duration for BLE stability (was 0.005)
-        await asyncio.sleep(0.01)  # NEW CODE
         total_chunk = self.model_size // self.model_chunk_size + 1
         if self.model_seq > total_chunk:
             send_packet = ModelPacket(cmd=MODEL_UPDATE_CMD_END)
             await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
-            #NEW CODE: Reset flags upon completion
-            self.sending_model = False  # NEW CODE
-            self.model_seq = 0         # NEW CODE
             return
         try:
             with open(self.model_path, 'rb') as f:
