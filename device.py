@@ -13,6 +13,7 @@ import logging
 
 from dean_uuid import *
 from packet import *
+from unitspace_manager import UnitspaceManager
 
 connected_devices = {}
 
@@ -21,6 +22,8 @@ def get_device_by_address(address):
 
 class DeviceError(Exception):
     pass
+
+unitspace_manager = UnitspaceManager()
 
 class Device:
     sound_classlist = [
@@ -147,14 +150,18 @@ class Device:
                     self.data_queue.put([self.config_dict['location'], self.config_dict['type'],
                                          self.config_dict['address'], service_name, char_name,
                                          received_time, data])
-                if not self.unitspace_queue.full():
-                    fmt = '<BBBfffffB20b'
-                    unpacked_data = struct.unpack(fmt, data)
-                    unpacked_data_list = list(unpacked_data)
-                    if unpacked_data_list[0] == 1:
-                        self.unitspace_queue.put([self.config_dict['location'], self.config_dict['type'],
-                                                  self.config_dict['address'], service_name, char_name,
-                                                  received_time, unpacked_data_list])
+                # if not self.unitspace_queue.full():
+                fmt = '<BBBfffffB20b'
+                unpacked_data = struct.unpack(fmt, data)
+                unpacked_data_list = list(unpacked_data)
+                if unpacked_data_list[0] == 1:
+                    # Unitspace management start
+                    asyncio.create_task(unitspace_manager.unitspace_existence_estimation(self.config_dict['location'], self.config_dict['type'],
+                                                self.config_dict['address'], service_name, char_name,
+                                                received_time, unpacked_data_list))
+                    # self.unitspace_queue.put([self.config_dict['location'], self.config_dict['type'],
+                    #                           self.config_dict['address'], service_name, char_name,
+                    #                           received_time, unpacked_data_list])
             elif char_name == 'predict':
                 print("WIP : mqtt service required for handling inference result")   
             elif char_name == 'debugstr':
@@ -422,13 +429,9 @@ class Device:
         logging.error(f"{self.config_dict['address']}: Failed to connect after {retry_count} attempts")
         return False    
             
-    # async def ble_client_start(self):
-    #     return await self._ble_worker()
 
-# NEW CODE: Modified DeviceManager with IPC support
 class DeviceManager:
-    def __init__(self, ipc_queue):  # NEW CODE: Added ipc_queue parameter
-        self.ipc_queue = ipc_queue  # NEW CODE: Store the shared IPC queue
+    # def __init__(self):
 
     async def process_command(self, commands):
         cmd = commands[0]
@@ -496,33 +499,7 @@ class DeviceManager:
             await device_obj.model_train_start()
             return "Model training started".encode()
         
-        elif cmd == 'internal_processing':
-            await device_obj.unitspace_existence_estimation(commands[2])
-            return "Internal processing completed".encode()
-        
-        elif cmd == 'unitspace':
-            await device_obj.unitspace_existence_simulation()
-            return "unitspace existence estimation command send".encode()
-        
         else:
             print("What? " + cmd + " " + str(type(cmd)))
             return b''
         
-    def get_queue(self):
-        # NEW CODE: Not used with IPC since ipc_queue is provided externally
-        pass
-    
-    async def manager_main(self):
-        import queue  # MODIFIED: import to catch queue.Empty
-        loop = asyncio.get_running_loop()  # NEW CODE
-        while True:
-            try:
-                # MODIFIED: Use timeout so that we can check for sentinel commands
-                command, reply_queue = await loop.run_in_executor(None, self.ipc_queue.get, True, 1)
-            except queue.Empty:
-                continue
-            if command == ['shutdown']:
-                break  # MODIFIED: break on shutdown command
-            result = await self.process_command(command)
-            if reply_queue is not None:
-                reply_queue.put(result)
