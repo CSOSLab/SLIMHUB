@@ -22,25 +22,15 @@ import device
 from process import *
 from dean_uuid import *
 
-
-
 host = 'localhost'
 port = 6604
 
-# NEW CODE: Create shared IPC queue for inter-process communication
-ipc_queue = mp.Queue()
-# NEW CODE: Create a Manager for generating reply queues (picklable proxy objects)
-reply_manager = mp.Manager()
-
 sound_process = SoundProcess()
 data_process = DataProcess()
-# Pass the shared ipc_queue and reply_manager to UnitspaceProcess
-unitspace_process = UnitspaceProcess(ipc_queue, reply_manager)
 
 log_process = LogProcess()
 
-# NEW CODE: Create DeviceManager with the shared ipc_queue
-manager = device.DeviceManager(ipc_queue)
+manager = device.DeviceManager()
 
 logging.basicConfig(
     filename=os.path.join(os.path.dirname(os.path.realpath(__file__)), 'programdata', 'logging.log'),
@@ -136,10 +126,10 @@ async def main_worker(server):
             if current_device is None:
                 current_device = device.Device(dev)
                 if current_device.config_dict['type'] == "DE&N":
-                    current_device.manager_queue = manager.get_queue()  # remains for legacy usage if needed
+                    # current_device.manager_queue = manager.get_queue()  # remains for legacy usage if needed
                     current_device.sound_queue = sound_process.get_queue()
                     current_device.data_queue = data_process.get_queue()
-                    current_device.unitspace_queue = unitspace_process.get_queue()
+                    # current_device.unitspace_queue = unitspace_process.get_queue()
                     current_device.log_queue = log_process.get_queue()
                 if await current_device.ble_client_start():
                     logging.info('%s connected', dev)
@@ -170,7 +160,6 @@ async def cli_handler(reader, writer):
             await writer.drain()
             # MODIFIED: Signal quit_event and send sentinel command to DeviceManager via ipc_queue
             quit_event.set()
-            ipc_queue.put((['shutdown'], None))  # shutdown sentinel for DeviceManager
         else:
             return_msg = await manager.process_command(data)
             writer.write(return_msg)
@@ -205,7 +194,6 @@ async def shutdown_all_tasks():
 async def async_main():
     server = await asyncio.start_server(cli_handler, host, port)
     main_task = asyncio.create_task(main_worker(server))
-    manager_task = asyncio.create_task(manager.manager_main())
     try: 
         async with server:
             await server.serve_forever()
@@ -222,19 +210,14 @@ async def async_main():
                 logging.warning(f"Error disconnected device {dev.config_dict['address']} : {e}")
                 await asyncio.sleep(1)
 
-        # MODIFIED: Gracefully shutdown child processes via their stop() (which now sends shutdown sentinel)
-        sound_process.stop()      # now sends shutdown signal to SoundProcess
-        data_process.stop()       # now sends shutdown signal to DataProcess
-        unitspace_process.stop()  # now sends shutdown signal to UnitspaceProcess
+        # Gracefully shutdown child processes via their stop() (which now sends shutdown sentinel)
+        sound_process.stop()     
+        data_process.stop()     
         log_process.stop()
 
         sound_process.process.join()
         data_process.process.join()
-        unitspace_process.process.join()
         log_process.process.join()
-        manager_task.cancel()
-        await asyncio.gather(manager_task, return_exceptions=True)
-        reply_manager.shutdown()
         
         logging.info('Exiting slimhub server')
         
@@ -256,8 +239,8 @@ if __name__ == "__main__":
     parser.add_argument('-a', '--apply', action='store_true', help='apply config file')
     parser.add_argument('-l', '--list', action='store_true', help='list registered devices')
     parser.add_argument('-q', '--quit', action='store_true', help='quit slimhub client')
-    parser.add_argument('-us', '--unitspace', nargs=1, help='unitspace existence estimation service',
-                        metavar=('address'))
+    # parser.add_argument('-us', '--unitspace', nargs=1, help='unitspace existence estimation service',
+    #                     metavar=('address'))
     parser.add_argument('-hc', '--hubconfig', nargs=2, help='Update hub configuration', metavar=('key', 'value'))
 
     if len(sys.argv) == 1:
@@ -273,7 +256,6 @@ if __name__ == "__main__":
         
         sound_process.start()
         data_process.start()
-        unitspace_process.start()
         log_process.start()
         try:
             asyncio.run(async_main())
@@ -295,7 +277,7 @@ if __name__ == "__main__":
         send_command('list', args_dict)
     if args.quit:
         send_command('quit', args_dict)
-    if args.unitspace:
-        send_command('unitspace', args_dict)
+    # if args.unitspace:
+    #     send_command('unitspace', args_dict)
     if args.hubconfig:
         update_config(args.hubconfig[0], args.hubconfig[1])
