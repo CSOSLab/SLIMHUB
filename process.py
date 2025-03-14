@@ -27,6 +27,30 @@ from dean_uuid import *
 
 import uuid
 
+sound_classlist = [
+    'background',
+    'hitting',
+    'speech_tv',
+    'air_appliances',
+    'brushing',
+    'peeing',
+    'flushing',
+    'flush_end',
+    'microwave',
+    'cooking',
+    'watering_low',
+    'watering_high',
+]
+num_sound_labels = len(sound_classlist)
+
+env_list = [
+    'temperature',
+    'humidity',
+    'IAQ',
+    'CO2',
+    'bVOC',
+]
+
 # Base Process class
 class Process:
     queue = None
@@ -80,39 +104,6 @@ class SoundProcess(Process):
             
 
 class DataProcess(Process):
-    # sound_classlist = [
-    #     'brushing',
-    #     'peeing',
-    #     'flushing',
-    #     'afterflushing',
-    #     'airutils',
-    #     'hitting',
-    #     'microwave',
-    #     'cooking',
-    #     'speech',
-    #     'tv',
-    #     'watering1',
-    #     'watering2',
-    #     'background',
-    # ]
-    # num_sound_labels = len(sound_classlist)
-    
-    # these are kitchen-base sound class list
-    sound_classlist = [
-        'airutils',
-        'hitting',
-        'microwave',
-        'speech',
-        'tv',
-        'watering1',
-        'watering2',
-        'background',
-        'coffee1',
-        'coffee2',
-        'purifier',
-    ]
-    num_sound_labels = len(sound_classlist)
-                 
     def __init__(self):
         self.queue = mp.Queue()
         self.process = mp.Process(target=self._run)
@@ -136,13 +127,13 @@ class DataProcess(Process):
                 if char_name == "rawdata":
                     if os.path.getsize(os.path.join(dir_path, filename)) == 0:
                         f.write("time,GridEye,Direction,ENV,temp,humid,iaq,eco2,bvoc,")
-                        f.write("SOUND," + ",".join(self.sound_classlist) + "\n")
-                    fmt = '<BBBfffff' + 'B' + str(self.num_sound_labels) + 'b'
-                    inference_unpacked_data = struct.unpack(fmt, data[:24 + self.num_sound_labels])
+                        f.write("SOUND," + ",".join(sound_classlist) + "\n")
+                    fmt = '<BBBfffff' + 'B' + str(num_sound_labels) + 'b'
+                    inference_unpacked_data = struct.unpack(fmt, data[:24 + num_sound_labels])
                     file_msg = ','.join(map(str, inference_unpacked_data))
-                    dequantized_values = [(value + 128) / 256 for value in inference_unpacked_data[-self.num_sound_labels:]]
+                    dequantized_values = [(value + 128) / 256 for value in inference_unpacked_data[-num_sound_labels:]]
                     dequantized_str = ','.join(map(str, dequantized_values))
-                    file_msg_final = ','.join(map(str, inference_unpacked_data[:-self.num_sound_labels])) + ',' + dequantized_str
+                    file_msg_final = ','.join(map(str, inference_unpacked_data[:-num_sound_labels])) + ',' + dequantized_str
                     f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S") + "," + file_msg_final + "\n")
                 elif char_name == "debugstr":
                     try:
@@ -160,8 +151,7 @@ class DataProcess(Process):
                             f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S") + "," + debug_string + "\n")
                         # logging.log(f"JSONDecodeError: {e}")
                         # logging.log(f"Invalid JSON: {repr(debug_string)}")
-                        
-                        
+
             else:
                 return
             
@@ -172,8 +162,8 @@ class DataProcess(Process):
                 break
             location, device_type, address, service_name, char_name, received_time, data = item
             self._rawdata_result_handling_func(location, device_type, address, service_name, char_name, received_time, data)
-            processed_time = time.time()
             
+
 class UnitspaceProcess(Process):
     debug_static_graph = None  # will be initialized in __init__
     residents_house_graph = None
@@ -201,6 +191,7 @@ class UnitspaceProcess(Process):
         self.connected_devices_unitspace_process = {}
 
     async def _unitspace_existence_estimation(self, location, device_type, address, service_name, char_name, received_time, unpacked_data_list):
+        time_dt = datetime.fromtimestamp(received_time)
         try:
             if service_name == "inference":
                 # [New code] 초기 등록 여부 체크:
@@ -259,19 +250,19 @@ class UnitspaceProcess(Process):
                 result = await loop.run_in_executor(None, reply_queue.get)
                 # print("[New code] Received IPC response:", result)
                 # [New code] 전달받은 location 정보로 그래프 업데이트:
-                self.update_graph_state(address, location)
+                self.update_graph_state(address, location, time_dt)
         except Exception as e:
             print(f"Error: {e}")
 
     # [New code] graph 상태 업데이트 및 출력: residents_house_graph에 등록된 경우, 활성 노드를 업데이트하고 display_graph() 호출
-    def update_graph_state(self, address, new_location):
+    def update_graph_state(self, address, new_location, time_dt):
         if new_location in self.residents_house_graph.nodes:
             # [New code] 새로운 위치가 그래프에 있다면, 기존 활성 노드와 비교
             # 여기서는 단순히 새 위치로 업데이트하는 것으로 처리
             print(f"[New code] Updating graph state for {address}: setting active node to {new_location}")
             self.residents_house_graph.set_active_node(new_location)
             # self.residents_house_graph.display_graph()
-            self.residents_house_graph.display_graph_lite()
+            self.residents_house_graph.display_graph_lite(time_dt)
             # [New code] dictionary의 location 정보도 업데이트
             if address in self.connected_devices_unitspace_process:
                 _, current_state = self.connected_devices_unitspace_process[address]
@@ -286,32 +277,7 @@ class UnitspaceProcess(Process):
                 break
             location, device_type, address, service_name, char_name, received_time, unpacked_data_list = item
             asyncio.run(self._unitspace_existence_estimation(location, device_type, address, service_name, char_name, received_time, unpacked_data_list))
-            processed_time = time.time()
 
-
-            
-# 사운드 클래스 리스트
-sound_classlist = [
-    'airutils',
-    'hitting',
-    'microwave',
-    'speech',
-    'tv',
-    'watering1',
-    'watering2',
-    'background',
-    'coffee1',
-    'coffee2',
-    'purifier',
-]
-
-env_list = [
-    'temperature',
-    'humidity',
-    'IAQ',
-    'CO2',
-    'bVOC',
-]
 
 class LogProcess(Process):
     MSGQ_TYPE_DEVICE = 1
@@ -384,7 +350,8 @@ class LogProcess(Process):
             # 경로 설정
             filename = time_dt.strftime("%Y-%m-%d") + ".txt"
             path_base = os.path.join(os.path.dirname(os.path.realpath(__file__)), "data")
-            dir_path = os.path.join(path_base, location, device_type, address, service_name, "display")
+            # dir_path = os.path.join(path_base, location, device_type, address, service_name, "display")
+            dir_path = os.path.join(path_base, "display")
 
             # 디렉터리 생성
             os.makedirs(dir_path, exist_ok=True)
@@ -404,23 +371,23 @@ class LogProcess(Process):
                         sound_id = debug_dict.get('id', -1)
                         if sound_id not in (1, 7):  # ID 0과 7 무시
                             label = sound_classlist[sound_id] if 0 <= sound_id < len(sound_classlist) else "Unknown Sound"
-                            log_message = f"{timestamp}  [EVENT] - Sound '{label}' was detected\n"
+                            log_message = f"{timestamp}  {location} [EVENT] - Sound '{label}' was detected\n"
 
                     # ENV 이벤트 처리
                     elif debug_dict['type'] == 'DEBUG' and debug_dict['event'] == 'ENV':
                         env_id = debug_dict.get('id', -1)
                         label = env_list[env_id] if 0 <= env_id < len(env_list) else "N/A"
-                        log_message = f"{timestamp}  [EVENT] - '{label}' event was detected\n"
+                        log_message = f"{timestamp}  {location} [EVENT] - '{label}' event was detected\n"
                     
                     # ENTER 이벤트 처리
                     elif debug_dict['type'] == 'DEBUG' and debug_dict['event'] == 'ENTER':
                         value = debug_dict.get('value', 0)
-                        log_message = f"{timestamp}  [EVENT] - ENTER value: {value}\n"
+                        log_message = f"{timestamp}  {location} [EVENT] - ENTER value: {value}\n"
 
                     # EXIT 이벤트 처리
                     elif debug_dict['type'] == 'DEBUG' and debug_dict['event'] == 'EXIT':
                         value = debug_dict.get('value', 0)
-                        log_message = f"{timestamp}  [EVENT] - EXIT value: {value}\n"
+                        log_message = f"{timestamp}  {location} [EVENT] - EXIT value: {value}\n"
 
                     # INFERENCE 처리
                     elif debug_dict['type'] == 'INFERENCE':
@@ -429,12 +396,13 @@ class LogProcess(Process):
                         sequence = debug_dict.get('sequence', 'N/A')
                         truth = debug_dict.get('truth', 0.0)
                         missing = debug_dict.get('missing', 'None')
+                        value = debug_dict.get('value', 0)
+                        
+                        if status == 'EXCEPTION':
+                            log_message = f"{timestamp}  {location} [INFERENCE] {status}: {adl}, value: {value}\n"
 
-                        if status == "PRE-DETECT":
-                            log_message = f"{timestamp}  [INFERENCE] PRE-DETECT ADL: {adl}, sequence: {sequence}, truth: {truth:.2f}, missing: {missing}\n"
-
-                        elif status == "COMPLETE":
-                            log_message = f"{timestamp}  [INFERENCE] COMPLETE ADL: {adl}, sequence: {sequence}, truth: {truth:.2f}, missing: {missing}\n"
+                        else:
+                            log_message = f"{timestamp}  {location} [INFERENCE] {status}: {adl}, sequence: {sequence}, truth: {truth:.2f}, missing: {missing}\n"
 
                     # 로그 파일에 기록
                     if log_message:

@@ -1,3 +1,5 @@
+import os
+
 class Node:
     def __init__(self, name):
         self.name = name
@@ -63,7 +65,7 @@ class CustomGraph:
             print(f"{node_names[i]} ", row)
             
     # [New code] 간략하게 활성 노드 상태만 표시하는 함수 (display_graph_lite)
-    def display_graph_lite(self):
+    def display_graph_lite(self, time_dt):
         node_names = list(self.nodes.keys())
         if not node_names:
             print("No nodes.")
@@ -81,10 +83,24 @@ class CustomGraph:
             status_symbol = "***" if self.nodes[name].activated else "--"
             status_cells.append(f"[ {status_symbol:^{col_width-2}} ]")
         status = " ".join(status_cells)
-        print(header)
-        print(status)
-            
-            
+
+        # 경로 설정
+        filename = time_dt.strftime("%Y-%m-%d") + ".txt"
+        path_base = os.path.join(os.path.dirname(os.path.realpath(__file__)), "data")
+        # dir_path = os.path.join(path_base, location, device_type, address, service_name, "display")
+        dir_path = os.path.join(path_base, "display")
+
+        # 디렉터리 생성
+        os.makedirs(dir_path, exist_ok=True)
+
+        with open(os.path.join(dir_path, filename), 'a') as f:
+            f.write(header)
+            f.write("\n")
+            f.write(status)
+            f.write("\n")
+        
+        # print(header)
+        # print(status)
 
     # [New code] 단 하나의 노드만 활성화하도록 업데이트하는 메서드
     def set_active_node(self, name):

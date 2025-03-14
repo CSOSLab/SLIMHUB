@@ -23,7 +23,22 @@ class DeviceError(Exception):
     pass
 
 class Device:
-    enable_default = {
+    sound_classlist = [
+        'background',
+        'hitting',
+        'speech_tv',
+        'air_appliances',
+        'brushing',
+        'peeing',
+        'flushing',
+        'flush_end',
+        'microwave',
+        'cooking',
+        'watering_low',
+        'watering_high',
+    ]
+
+    service_enable_default = {
         'sound': ['model'],
         'grideye': ['prediction'],
         'inference': ['rawdata', 'predict', 'debugstr']
@@ -31,15 +46,27 @@ class Device:
     model_chunk_size = 128
 
     def __init__(self, dev):
+        # Update connected device dictionary
         connected_devices.update({dev.address: self})
-        self.model_dir = "programdata/models/" + dev.address
-        os.makedirs(self.model_dir, exist_ok=True)
+
         self.config_dict = {
             'address': dev.address,
             'type': dev.name,
             'name': '',
             'location': '',
         }
+        self.is_connected = False
+
+        self.ble_client = None
+        self.manager_queue = None
+        self.sound_queue = None
+        self.data_queue = None
+        self.unitspace_queue = None
+        self.log_queue = None
+        
+        # Sound model management
+        self.model_dir = "programdata/models/" + dev.address
+        os.makedirs(self.model_dir, exist_ok=True)
         self.model_path = os.path.join("programdata", "models", dev.address, dev.address + ".tflite")
         self.sending_model = False
         self.model_seq = 0
@@ -48,16 +75,10 @@ class Device:
             with open(self.model_path, 'rb') as f:
                 self.model_size = len(f.read())
         self.collecting_feature = False
-        self.ble_client = None
-        self.manager_queue = None
-        self.sound_queue = None
-        self.data_queue = None
-        self.unitspace_queue = None
-        self.log_queue = None
 
         self.user_in = False
-        self.enable = Device.enable_default
-        self.is_connected = False
+        
+        self.enable = Device.service_enable_default
     
     def __repr__(self):
         return f"{self.__class__.__name__}: {self.config_dict['address']}, {self.config_dict['type']}, {self.config_dict['name']}, {self.config_dict['location']}"
