@@ -250,9 +250,8 @@ class LogProcess(Process):
                     
                     # SOUND 이벤트 처리 (ID 1과 7 무시)
                     if debug_dict['type'] == 'DEBUG' and debug_dict['event'] == 'SOUND':
-                        sound_id = debug_dict.get('id', -1)
-                        if sound_id not in (1, 7):  # ID 0과 7 무시
-                            label = sound_classlist[sound_id] if 0 <= sound_id < len(sound_classlist) else "Unknown Sound"
+                        label = debug_dict.get('id', 'unknown')
+                        if label not in ("unknown", "background"):
                             log_message = f"{timestamp}  {location} [EVENT] - Sound '{label}' was detected\n"
 
                     # ENV 이벤트 처리
