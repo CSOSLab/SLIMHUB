@@ -3,6 +3,7 @@ DEAN_UUID_CTS_CURRENT_TIME_CHAR =       '00002a2b-0000-1000-8000-00805f9b34fb'
 
 # Dean base service uuid
 DEAN_UUID_BASE_SERVICE =                '4eab0000-6bef-11ee-b962-10012002809a'
+DEAN_UUID_BASE_RESET_CHAR =             '4eab0001-6bef-11ee-b962-10012002809a'
 
 # Device Configuration Service
 DEAN_UUID_CONFIG_SERVICE =              '4eab0100-6bef-11ee-b962-10012002809a'
@@ -58,6 +59,7 @@ else:
 dean_service_dict = {
     'base': {
         'service':          DEAN_UUID_BASE_SERVICE,
+        'reset':            DEAN_UUID_BASE_RESET_CHAR,
     },
     'config': {
         'service':          DEAN_UUID_CONFIG_SERVICE,
@@ -100,7 +102,8 @@ dean_service_dict = {
 
 dean_service_lookup = {
     DEAN_UUID_BASE_SERVICE:                 'base',
-    
+    DEAN_UUID_BASE_RESET_CHAR:              'reset',
+
     DEAN_UUID_CONFIG_SERVICE:               'config',
     DEAN_UUID_CONFIG_NAME_CHAR:             'name',
     DEAN_UUID_CONFIG_LOCATION_CHAR:         'location',

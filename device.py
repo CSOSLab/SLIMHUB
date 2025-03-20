@@ -232,6 +232,10 @@ class Device:
         file_path = os.path.join(config_path, self.config_dict['address'] + '.json')
         with open(file_path, 'w') as save:
             json.dump(self.config_dict, save, indent=4)
+
+    async def reset_device(self):
+        char_uuid = dean_service_dict['base']['reset']
+        await self.ble_client.write_gatt_char(char_uuid, True)
             
     async def activate_characteristic(self, service_name, char_name):
         service = self.get_service_by_name(service_name)
@@ -448,6 +452,11 @@ class DeviceManager:
         if cmd == 'config':
             await device_obj.config_device(commands[2], commands[3])
             return_msg = f"address: {device_obj.config_dict['address']}, type: {device_obj.config_dict['type']}, name: {device_obj.config_dict['name']}, location: {device_obj.config_dict['location']}"
+            return return_msg.encode()
+        
+        if cmd == 'reset':
+            await device_obj.reset_device()
+            return_msg = f"Reset DEAN {commands[1]}"
             return return_msg.encode()
 
         elif cmd == 'service':

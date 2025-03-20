@@ -228,6 +228,8 @@ if __name__ == "__main__":
     parser.add_argument('-r', '--run', action='store_true', help='run slimhub client')
     parser.add_argument('-c', '--config', nargs=3, help='configure device', 
                         metavar=('address', 'target', 'data'))
+    parser.add_argument('--reset', nargs=1, help='run slimhub client',
+                        metavar=('address'))
     parser.add_argument('-s', '--service', nargs=4, help='manage characteristic notification', 
                         metavar=('address', 'enable/disable', 'service', 'characteristic'))
     parser.add_argument('-u', '--update', nargs=1, help='update device model',
@@ -263,6 +265,8 @@ if __name__ == "__main__":
             pass  # graceful shutdown attempt
     if args.config:
         send_command('config', args_dict)
+    if args.reset:
+        send_command('reset', args_dict)
     if args.service:
         send_command('service', args_dict)
     if args.update:
