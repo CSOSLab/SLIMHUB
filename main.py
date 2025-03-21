@@ -128,10 +128,13 @@ async def main_worker(server):
                     current_device.data_queue = data_process.get_queue()
                     # current_device.unitspace_queue = unitspace_process.get_queue()
                     current_device.log_queue = log_process.get_queue()
-                if await current_device.ble_client_start():
-                    logging.info('%s connected', dev)
+
+                    if await current_device.ble_client_start():
+                        logging.info('%s connected', dev)
+                    else:
+                        logging.info('%s connection failed', dev)
                 else:
-                    logging.info('%s connection failed', dev)
+                    await current_device.remove()
             else:
                 if await current_device.ble_client_start():
                     logging.info('%s reconnected', dev)

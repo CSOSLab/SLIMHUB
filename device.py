@@ -88,7 +88,8 @@ class Device:
     
     async def remove(self):
         try:
-            await self.ble_client.disconnect()
+            if self.ble_client is not None:
+                await self.ble_client.disconnect()
         except Exception as e:
             logging.warning("Error during disconnect: %s", e)
         try:
@@ -97,8 +98,8 @@ class Device:
                 connected_devices.pop(address, None)
         except Exception as e:
             logging.warning("Error during device removal: %s", e)
-        # finally:
-        #     del self
+        finally:
+            del self
         
     def check_room_status(self, data):
         value = struct.unpack('B', data[0:1])[0]
