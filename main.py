@@ -32,6 +32,9 @@ log_process = LogProcess()
 
 manager = device.DeviceManager()
 
+# NEW CODE: Use an asyncio Event for quit command handling
+quit_event = asyncio.Event()
+
 logging.basicConfig(
     filename=os.path.join(os.path.dirname(os.path.realpath(__file__)), 'programdata', 'logging.log'),
     format='%(asctime)s: %(levelname)s: %(message)s',
@@ -90,12 +93,6 @@ def update_config(key, value):
     else:
         logging.warning("Invalid config key: %s", key)
 
-# Execute configuration loading
-load_or_create_config()
-
-# NEW CODE: Use an asyncio Event for quit command handling
-quit_event = asyncio.Event()
-
 async def main_worker(server):
     async def scan():
         target_devices = []
@@ -125,7 +122,7 @@ async def main_worker(server):
             current_device = device.get_device_by_address(dev.address)
             if current_device is None:
                 current_device = device.Device(dev)
-                if current_device.config_dict['type'] == "DE&N":
+                if current_device.config_dict['type'] == "DEAN":
                     # current_device.manager_queue = manager.get_queue()  # remains for legacy usage if needed
                     current_device.sound_queue = sound_process.get_queue()
                     current_device.data_queue = data_process.get_queue()
@@ -232,17 +229,13 @@ if __name__ == "__main__":
                         metavar=('address'))
     parser.add_argument('-s', '--service', nargs=4, help='manage characteristic notification', 
                         metavar=('address', 'enable/disable', 'service', 'characteristic'))
-    parser.add_argument('-u', '--update', nargs=1, help='update device model',
-                        metavar=('address'))
+    parser.add_argument('--model', nargs=2, help='sound model configuration',
+                        metavar=('address', 'command'))
     parser.add_argument('-f', '--feature', nargs=2, help='sound feature collection',
                         metavar=('address', 'start/stop'))
-    parser.add_argument('-t', '--train', nargs=1, help='train sound model',
-                        metavar=('address'))
     parser.add_argument('-a', '--apply', action='store_true', help='apply config file')
     parser.add_argument('-l', '--list', action='store_true', help='list registered devices')
     parser.add_argument('-q', '--quit', action='store_true', help='quit slimhub client')
-    # parser.add_argument('-us', '--unitspace', nargs=1, help='unitspace existence estimation service',
-    #                     metavar=('address'))
     parser.add_argument('-hc', '--hubconfig', nargs=2, help='Update hub configuration', metavar=('key', 'value'))
 
     if len(sys.argv) == 1:
@@ -255,6 +248,9 @@ if __name__ == "__main__":
     if args.run:
         print("==== SLIMHUB START ====")
         logging.info("SLIMHUB start")
+
+        # Execute configuration loading
+        load_or_create_config()
         
         sound_process.start()
         data_process.start()
@@ -269,19 +265,15 @@ if __name__ == "__main__":
         send_command('reset', args_dict)
     if args.service:
         send_command('service', args_dict)
-    if args.update:
-        send_command('update', args_dict)
+    if args.model:
+        send_command('model', args_dict)
     if args.feature:
         send_command('feature', args_dict)
-    if args.train:
-        send_command('train', args_dict)
     if args.apply:
         send_command('apply', args_dict)
     if args.list:
         send_command('list', args_dict)
     if args.quit:
         send_command('quit', args_dict)
-    # if args.unitspace:
-    #     send_command('unitspace', args_dict)
     if args.hubconfig:
         update_config(args.hubconfig[0], args.hubconfig[1])

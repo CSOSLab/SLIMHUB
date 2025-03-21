@@ -352,6 +352,11 @@ class Device:
             logging.warning("Model send error: %s", e)
             self.sending_model = False
     
+    async def model_remove(self):
+        logging.info('%s: Remove', self.config_dict['address'])
+        send_packet = ModelPacket(cmd=MODEL_UPDATE_CMD_REMOVE)
+        await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
+    
     async def model_train_start(self):
         logging.info('%s: Model training start', self.config_dict['address'])
         args = ['python3', 'training.py', self.config_dict['address']]
@@ -485,13 +490,21 @@ class DeviceManager:
                 await asyncio.sleep(0.1)
             return "Config data applied".encode()
         
-        elif cmd == 'update':
-            if device_obj.sending_model:
-                return "Model update is in progress".encode()
+        elif cmd == 'model':
+            if commands[2] == 'update':
+                if device_obj.sending_model:
+                    return f"{address} Model update is in progress".encode()
+                else:
+                    await device_obj.model_update_start()
+                    return f"{address} Model update started".encode()
+            elif commands[2] == 'train':
+                return f"{address} Model train started".encode()
+            elif commands[2] == 'remove':
+                await device_obj.model_remove()
+                return f"{address} Model removed".encode()
             else:
-                await device_obj.model_update_start()
-                return "Model update started".encode()
-        
+                return "Argument 2 must be 'start', 'train' or 'erase'".encode()
+
         elif cmd == 'feature':
             if commands[2] == 'start':
                 send_packet = ModelPacket(cmd=FEATURE_COLLECTION_CMD_START)
