@@ -122,7 +122,7 @@ async def main_worker(server):
             current_device = device.get_device_by_address(dev.address)
             if current_device is None:
                 current_device = device.Device(dev)
-                if current_device.config_dict['type'] == "DEAN":
+                if current_device.config_dict['type'] == "DE&N":
                     # current_device.manager_queue = manager.get_queue()  # remains for legacy usage if needed
                     current_device.sound_queue = sound_process.get_queue()
                     current_device.data_queue = data_process.get_queue()
