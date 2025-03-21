@@ -224,6 +224,8 @@ class LogProcess(Process):
 
         while True:
             item = self.queue.get()
+            if item is None:  # MODIFIED: shutdown signal detected
+                break
  
             location, device_type, address, service_name, char_name, received_time, data = item
 
