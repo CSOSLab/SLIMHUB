@@ -68,9 +68,10 @@ class Device:
         self.log_queue = None
         
         # Sound model management
-        self.model_dir = "programdata/models/" + dev.address
-        os.makedirs(self.model_dir, exist_ok=True)
-        self.model_path = os.path.join("programdata", "models", dev.address, dev.address + ".tflite")
+        self.training_model = False
+        self.dataset_path = os.path.join("programdata", "datasets", dev.address)
+        os.makedirs(self.dataset_path, exist_ok=True)
+        self.model_path = os.path.join("programdata", "models", dev.address + ".tflite")
         self.sending_model = False
         self.model_seq = 0
         self.model_size = 0
@@ -340,14 +341,19 @@ class Device:
         total_chunk = self.model_size // self.model_chunk_size + 1
         if self.model_seq > total_chunk:
             send_packet = ModelPacket(cmd=MODEL_UPDATE_CMD_END)
-            await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
+            for i in range(3):
+                await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
+                await asyncio.sleep(1)
+                if self.sending_model == False:
+                    break
             return
         try:
             with open(self.model_path, 'rb') as f:
                 model_data = f.read()
             model_chunk = model_data[self.model_seq * self.model_chunk_size:(self.model_seq + 1) * self.model_chunk_size]
             send_packet = ModelDataPacket(cmd=MODEL_UPDATE_CMD_DATA, seq=self.model_seq, data=model_chunk)
-            logging.info('%s: Sending model data %d/%d', self.config_dict['address'], self.model_seq, total_chunk)
+            if self.model_seq%10 == 0:
+                logging.info('%s: Sending model data %d/%d', self.config_dict['address'], self.model_seq, total_chunk)
             await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
         except Exception as e:
             logging.warning("Model send error: %s", e)
@@ -360,9 +366,15 @@ class Device:
     
     async def model_train_start(self):
         logging.info('%s: Model training start', self.config_dict['address'])
+        self.training_model = True
         args = ['python3', 'training.py', self.config_dict['address']]
-        subprocess.Popen(args)
-        
+        proc = await asyncio.create_subprocess_exec(*args)
+        async def monitor():
+            await proc.wait()
+            logging.info(f"{self.config_dict['address']}: Training done")
+            self.training_model = False
+        asyncio.create_task(monitor())
+    
     async def unitspace_existence_simulation(self):
         await asyncio.sleep(0.005)
         try:
@@ -499,7 +511,11 @@ class DeviceManager:
                     await device_obj.model_update_start()
                     return f"{address} Model update started".encode()
             elif commands[2] == 'train':
-                return f"{address} Model train started".encode()
+                if device_obj.training_model:
+                    return f"{address} Model training is in progress".encode()
+                else:
+                    await device_obj.model_train_start()
+                    return f"{address} Model train started".encode()
             elif commands[2] == 'remove':
                 await device_obj.model_remove()
                 return f"{address} Model removed".encode()
@@ -516,12 +532,7 @@ class DeviceManager:
                 await device_obj.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
                 return "Feature collection ended".encode()
             else:
-                return "Argument 2 must be 'start' or 'end'".encode()
-        
-        elif cmd == 'train':
-            await device_obj.model_train_start()
-            return "Model training started".encode()
-        
+                return "Argument 2 must be 'start' or 'end'".encode()        
         else:
             print("What? " + cmd + " " + str(type(cmd)))
             return b''
