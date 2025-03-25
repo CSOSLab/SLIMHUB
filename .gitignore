@@ -4,5 +4,6 @@ Pipfile
 Pipfile.lock
 nohup.out
 programdata/logging.log
+programdata/logging copy.log
 programdata/config
 slimhub-env/

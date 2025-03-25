@@ -233,7 +233,11 @@ class LogProcess(Process):
 
         while True:
             item = self.queue.get()
+<<<<<<< HEAD
+            if item is None:  # shutdown signal detected
+=======
             if item is None:  # MODIFIED: shutdown signal detected
+>>>>>>> origin/develop
                 break
  
             location, device_type, address, service_name, char_name, received_time, data = item
@@ -295,6 +299,11 @@ class LogProcess(Process):
 
                         else:
                             log_message = f"{timestamp}  {location} [INFERENCE] {status}: {adl}, sequence: {sequence}, truth: {truth:.2f}, missing: {missing}\n"
+                            
+                    # PRIORITY HEAP 처리
+                    elif debug_dict['type'] == 'HEAPPRINT':
+                        heap_state_str = debug_dict.get('heap_state', '')
+                        log_message = f"{timestamp} {location} [HEAP STATE] - {heap_state_str}"
 
                     # 로그 파일에 기록
                     if log_message:
