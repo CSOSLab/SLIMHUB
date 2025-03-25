@@ -14,6 +14,7 @@ import logging
 from dean_uuid import *
 from packet import *
 from unitspace_manager import UnitspaceManager
+from unitspace_manager_with_timestamp import UnitspaceManager_new
 
 connected_devices = {}
 
@@ -23,7 +24,8 @@ def get_device_by_address(address):
 class DeviceError(Exception):
     pass
 
-unitspace_manager = UnitspaceManager()
+# unitspace_manager = UnitspaceManager()
+unitspace_manager = UnitspaceManager_new()
 
 class Device:
     sound_classlist = [
@@ -370,7 +372,7 @@ class Device:
             logging.warning(e)
             return
         
-    async def unitspace_existence_estimation(self, command_string):
+    async def unitspace_existence_callback(self, command_string):
         await asyncio.sleep(0.005)
         try:
             # logging.info("unitspace existence estimation start")
