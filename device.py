@@ -68,9 +68,10 @@ class Device:
         self.log_queue = None
         
         # Sound model management
-        self.model_dir = "programdata/models/" + dev.address
-        os.makedirs(self.model_dir, exist_ok=True)
-        self.model_path = os.path.join("programdata", "models", dev.address, dev.address + ".tflite")
+        self.training_model = False
+        self.dataset_path = os.path.join("programdata", "datasets", dev.address)
+        os.makedirs(self.dataset_path, exist_ok=True)
+        self.model_path = os.path.join("programdata", "models", dev.address + ".tflite")
         self.sending_model = False
         self.model_seq = 0
         self.model_size = 0
@@ -88,7 +89,8 @@ class Device:
     
     async def remove(self):
         try:
-            await self.ble_client.disconnect()
+            if self.ble_client is not None:
+                await self.ble_client.disconnect()
         except Exception as e:
             logging.warning("Error during disconnect: %s", e)
         try:
@@ -97,8 +99,8 @@ class Device:
                 connected_devices.pop(address, None)
         except Exception as e:
             logging.warning("Error during device removal: %s", e)
-        # finally:
-        #     del self
+        finally:
+            del self
         
     def check_room_status(self, data):
         value = struct.unpack('B', data[0:1])[0]
@@ -232,6 +234,10 @@ class Device:
         file_path = os.path.join(config_path, self.config_dict['address'] + '.json')
         with open(file_path, 'w') as save:
             json.dump(self.config_dict, save, indent=4)
+
+    async def reset_device(self):
+        char_uuid = dean_service_dict['base']['reset']
+        await self.ble_client.write_gatt_char(char_uuid, True)
             
     async def activate_characteristic(self, service_name, char_name):
         service = self.get_service_by_name(service_name)
@@ -335,24 +341,40 @@ class Device:
         total_chunk = self.model_size // self.model_chunk_size + 1
         if self.model_seq > total_chunk:
             send_packet = ModelPacket(cmd=MODEL_UPDATE_CMD_END)
-            await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
+            for i in range(3):
+                await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
+                await asyncio.sleep(1)
+                if self.sending_model == False:
+                    break
             return
         try:
             with open(self.model_path, 'rb') as f:
                 model_data = f.read()
             model_chunk = model_data[self.model_seq * self.model_chunk_size:(self.model_seq + 1) * self.model_chunk_size]
             send_packet = ModelDataPacket(cmd=MODEL_UPDATE_CMD_DATA, seq=self.model_seq, data=model_chunk)
-            logging.info('%s: Sending model data %d/%d', self.config_dict['address'], self.model_seq, total_chunk)
+            if self.model_seq%10 == 0 or self.model_seq == total_chunk:
+                logging.info('%s: Sending model data %d/%d', self.config_dict['address'], self.model_seq, total_chunk)
             await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
         except Exception as e:
             logging.warning("Model send error: %s", e)
             self.sending_model = False
     
+    async def model_remove(self):
+        logging.info('%s: Remove', self.config_dict['address'])
+        send_packet = ModelPacket(cmd=MODEL_UPDATE_CMD_REMOVE)
+        await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
+    
     async def model_train_start(self):
         logging.info('%s: Model training start', self.config_dict['address'])
+        self.training_model = True
         args = ['python3', 'training.py', self.config_dict['address']]
-        subprocess.Popen(args)
-        
+        proc = await asyncio.create_subprocess_exec(*args)
+        async def monitor():
+            await proc.wait()
+            logging.info(f"{self.config_dict['address']}: Training done")
+            self.training_model = False
+        asyncio.create_task(monitor())
+    
     async def unitspace_existence_simulation(self):
         await asyncio.sleep(0.005)
         try:
@@ -449,6 +471,11 @@ class DeviceManager:
             await device_obj.config_device(commands[2], commands[3])
             return_msg = f"address: {device_obj.config_dict['address']}, type: {device_obj.config_dict['type']}, name: {device_obj.config_dict['name']}, location: {device_obj.config_dict['location']}"
             return return_msg.encode()
+        
+        if cmd == 'reset':
+            await device_obj.reset_device()
+            return_msg = f"Reset DEAN {commands[1]}"
+            return return_msg.encode()
 
         elif cmd == 'service':
             if commands[2] == 'enable':
@@ -476,13 +503,25 @@ class DeviceManager:
                 await asyncio.sleep(0.1)
             return "Config data applied".encode()
         
-        elif cmd == 'update':
-            if device_obj.sending_model:
-                return "Model update is in progress".encode()
+        elif cmd == 'model':
+            if commands[2] == 'update':
+                if device_obj.sending_model:
+                    return f"{address} Model update is in progress".encode()
+                else:
+                    await device_obj.model_update_start()
+                    return f"{address} Model update started".encode()
+            elif commands[2] == 'train':
+                if device_obj.training_model:
+                    return f"{address} Model training is in progress".encode()
+                else:
+                    await device_obj.model_train_start()
+                    return f"{address} Model train started".encode()
+            elif commands[2] == 'remove':
+                await device_obj.model_remove()
+                return f"{address} Model removed".encode()
             else:
-                await device_obj.model_update_start()
-                return "Model update started".encode()
-        
+                return "Argument 2 must be 'start', 'train' or 'erase'".encode()
+
         elif cmd == 'feature':
             if commands[2] == 'start':
                 send_packet = ModelPacket(cmd=FEATURE_COLLECTION_CMD_START)
@@ -493,12 +532,7 @@ class DeviceManager:
                 await device_obj.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
                 return "Feature collection ended".encode()
             else:
-                return "Argument 2 must be 'start' or 'end'".encode()
-        
-        elif cmd == 'train':
-            await device_obj.model_train_start()
-            return "Model training started".encode()
-        
+                return "Argument 2 must be 'start' or 'end'".encode()        
         else:
             print("What? " + cmd + " " + str(type(cmd)))
             return b''
