@@ -8,25 +8,45 @@ import tensorflow_model_optimization as tfmot
 
 from datetime import datetime
 
-import dataset_processing as dp
+import logging
 
+from dataset_processing import *
+from sound_processing import *
+
+# Set the seed value for experiment reproducibility.
+
+seed = 64
+np.random.seed(seed)
 #%%
+now = datetime.now()
 address = sys.argv[1]
 #%%
-base_label = np.array([
+sr = 16000
+wav_len = 16384
+wav_hop = int(wav_len/2)
+n_fft = 1024
+n_hop = int(n_fft/2)
+n_mels = 48
+
+labels_to_use = np.array([
+    'background',
+    'hitting',
+    'speech_tv',
+    'airutils',
     'brushing',
     'peeing',
     'flushing',
-    'afterflushing',
-    'airutils',
-    'hitting',
-    'microwave',
+    'flush_end',
     'cooking',
-    'speech',
-    'tv',
-    'watering1',
-    'watering2',
+    'microwave',
+    'watering_low',
+    'watering_high',
+])
+generic_labels = np.array([
     'background',
+    'hitting',
+    'speech_tv',
+    'airutils',
 ])
 
 #%%
@@ -34,12 +54,11 @@ model_dir = os.path.join('programdata', 'models')
 base_model_path = os.path.join(model_dir, 'base_model')
 dataset_path = os.path.join(model_dir, "training_dataset.npz")
 
-domain_dir = os.path.join(model_dir, address)
+domain_model_path = os.path.join(model_dir, address)
 #%%
 model = tf.keras.models.load_model(base_model_path)
 #%%
 original_dataset = np.load(dataset_path)
-print(original_dataset.files)
 
 #%%
 x_train = original_dataset['x_train']
@@ -49,86 +68,182 @@ t_test = original_dataset['t_test']
 x_val = original_dataset['x_val']
 t_val = original_dataset['t_val']
 # %%
-domain_dataset_path = 'programdata/models/chl-toilet2_mels_48_1024_512_16384.npz'
+domain_dataset_dir = os.path.join('programdata', 'datasets', address)
+os.makedirs(domain_dataset_dir, exist_ok=True)
+
+domain_dataset_initial_dir = os.path.join(domain_dataset_dir, 'initial')
+domain_dataset_pseudo_dir = os.path.join(domain_dataset_dir, 'pseudo')
+
+os.makedirs(domain_dataset_initial_dir, exist_ok=True)
+os.makedirs(domain_dataset_pseudo_dir, exist_ok=True)
+
+#%%
+initial_files = glob.glob(domain_dataset_initial_dir + '/*/*.wav')
+pseudo_files = glob.glob(domain_dataset_pseudo_dir + '/*/*.wav')
+
+#%%
+def mels_dataset(dataset_base_path, dataset_files, sr, wav_len, hop_len, n_mels, n_fft, n_hop, to_db=False):
+    process_name = 'mels'
+    category = os.path.split(dataset_base_path)[-1]
+
+    name = f"{category}_{process_name}"
+
+    x_all = []
+    t_all = []
+    locations = []
+
+    for file_path in tqdm(dataset_files):
+        # Extract location from the file path
+        relative_path = os.path.relpath(file_path, dataset_base_path)  # e.g., "location/label/data.wav"
+        location, label = os.path.split(os.path.dirname(relative_path))  # e.g., ("location", "label")
+        
+        if get_label(file_path) == label:  # Ensure the label matches
+            for x, t in gen_mels_and_label(file_path, sr=sr, wav_len=wav_len, wav_hop=hop_len, n_mels=n_mels, n_fft=n_fft, n_hop=n_hop, to_db=to_db):
+                x_all.append(x)
+                t_all.append(t)
+                locations.append(location)  # Store only location info
+
+    x_all = np.array(x_all).astype(np.float32)
+    t_all = np.array(t_all)
+    locations = np.array(locations)  # Convert to numpy array for consistency
+
+    return {
+        'x': x_all, 
+        't': t_all, 
+        'name': name, 
+        'location': locations,  # Store only location info
+        'shape': x_all[0].shape, 
+        'files': np.array(dataset_files)
+    }
+
+def save_ds(process, path):
+    name = process['name']
+
+    os.makedirs(path, exist_ok=True)
+    
+    np.savez_compressed(
+        os.path.join(path, name),                    
+        **process)
+    # print(f"Dataset saved to {path}")
+
+#%%
+save_ds(mels_dataset(domain_dataset_initial_dir, initial_files, sr=sr, wav_len=wav_len, hop_len=wav_hop, n_mels=n_mels, n_fft=n_fft, n_hop=n_hop, to_db=True), domain_dataset_dir)
+
+#%%
+domain_dataset_path = os.path.join(domain_dataset_dir, 'initial_mels.npz')
 
 domain_npzfile = np.load(domain_dataset_path)
-print(domain_npzfile.files)
 # %%
 domain_name = str(domain_npzfile['name']).split('_')[0]
-print(domain_name)
 # %%
-x_all = []
-t_all = []
-for key, data in domain_npzfile.items():
-    if 'x_fold' in key:
-        x_all.append(data)
-    elif 't_fold' in key:
-        t_all.append(data)
-# %%
-x_test_domain = x_all.pop(0)
-t_test_domain= t_all.pop(0)
-
-x_domain = np.concatenate(x_all)
-t_domain = np.concatenate(t_all)
+x_domain = domain_npzfile['x']
+t_domain = domain_npzfile['t']
 
 # %%
-np.unique(t_domain, return_counts=True)
+domain_labels = np.unique(t_domain)
+result = list(generic_labels)
+
+# 2. labels_to_use에서 domain_labels에 있는 항목만 추가
+filtered_labels_to_use = [label for label in labels_to_use if label in domain_labels and label not in generic_labels]
+result.extend(filtered_labels_to_use)
+
+# 3. domain_labels에서 새로 추가된 항목만 추가
+additional_domain_labels = [label for label in domain_labels if label not in labels_to_use and label not in generic_labels]
+result.extend(additional_domain_labels)
+
+new_labels_to_use = np.array(result)
 
 # %%
-x_transfer = x_domain[np.where(t_domain == 'elecbrush')[0]]
-t_transfer = t_domain[np.where(t_domain == 'elecbrush')[0]]
+x_train = x_train[np.isin(t_train, new_labels_to_use)]
+t_train = t_train[np.isin(t_train, new_labels_to_use)]
 
-x_test_transfer = x_test_domain[np.where(t_test_domain == 'elecbrush')[0]]
-t_test_transfer = t_test_domain[np.where(t_test_domain == 'elecbrush')[0]]
+x_val = x_val[np.isin(t_val, new_labels_to_use)]
+t_val = t_val[np.isin(t_val, new_labels_to_use)]
 
-# %%
-x_domain = x_domain[np.where(np.isin(t_domain, base_label))[0]]
-t_domain = t_domain[np.where(np.isin(t_domain, base_label))[0]]
-
-x_test_domain = x_test_domain[np.where(np.isin(t_test_domain, base_label))[0]]
-t_test_domain = t_test_domain[np.where(np.isin(t_test_domain, base_label))[0]]
-# for i in range(len(t_all[idx])):
-#     x_all[idx][i] = librosa.power_to_db(x_all[idx][i], ref=np.max)
-
-# %%
-x_domain = np.concatenate([x_domain, x_transfer]) 
-t_domain = np.concatenate([t_domain, t_transfer])
-
-x_test_domain = np.concatenate([x_test_domain, x_test_transfer])
-t_test_domain = np.concatenate([t_test_domain, t_test_transfer])
-
-np.unique(t_domain, return_counts=True)
+x_test = x_test[np.isin(t_test, new_labels_to_use)]
+t_test = t_test[np.isin(t_test, new_labels_to_use)]
 
 #%%
-labels_to_use_new = np.append(base_label, 'elecbrush')
+x_domain, t_domain = process_ds(x_domain, t_domain, resample_cnt=200, aug_cnt=1, shift_max=2)
+
+x_train_domain = np.concatenate((x_train, x_domain))
+t_train_domain = np.concatenate((t_train, t_domain))
+
+# %%
+def extract_windows(data: np.ndarray, time_steps: int = 32, overlap: float = 0.5, use_last: int = 128) -> np.ndarray:
+    """
+    Extract sliding windows from the last portion of a 2D feature sequence.
+    Each window is shaped (feature_dim, time_steps, 1), suitable for CNN input.
+
+    Parameters:
+        data (np.ndarray): Input array with shape (time, feature_dim), e.g., (173, 48)
+        time_steps (int): Length of each sliding window along the time axis (default: 32)
+        overlap (float): Overlap ratio between windows (0.0 to <1.0), default is 0.5
+        use_last (int): Number of most recent time steps to use (default: 128)
+
+    Returns:
+        np.ndarray: Array of shape (num_windows, feature_dim, time_steps, 1)
+    """
+    assert 0.0 <= overlap < 1.0, "overlap must be in the range [0.0, 1.0)."
+    assert data.shape[0] >= use_last, "Input data is shorter than 'use_last'."
+
+    # Use only the last 'use_last' time steps
+    data = data[-use_last:]  # shape: (use_last, feature_dim)
+    
+    step_size = int(time_steps * (1 - overlap))
+    windows = []
+
+    for start in range(0, use_last - time_steps + 1, step_size):
+        window = data[start:start + time_steps]  # shape: (time_steps, feature_dim)
+        window = window.T  # transpose to (feature_dim, time_steps)
+        window = np.expand_dims(window, axis=-1)  # add channel dimension: (feature_dim, time_steps, 1)
+        windows.append(window)
+
+    return np.stack(windows)
+# %%
+# Recursively find all .npz files
+npz_files = glob.glob(os.path.join(domain_dataset_dir, "features", "**", "*.npz"), recursive=True)
+
+x_train_background = []
+t_train_background = []
+
+for file_path in npz_files:
+    try:
+        with np.load(file_path) as npz:
+            feature = npz['feature']  # make sure the key is 'feature'
+            windows = extract_windows(feature)  # shape: (n, 48, 32, 1)
+            x_train_background.append(windows)
+            t_train_background.extend(['background'] * len(windows))
+    except Exception as e:
+        print(f"Failed to process {file_path}: {e}")
+
+# Stack the feature arrays into one big array
+x_train_background = np.concatenate(x_train_background, axis=0)  # shape: (total_windows, 48, 32, 1)
+t_train_background = np.array(t_train_background)  # shape: (total_windows,)
+
+# Sample a subset of the background data
+num_samples = 400
+total = len(x_train_background)
+
+indices = np.random.choice(total, size=num_samples, replace=(total < num_samples))
+
+x_train_background = x_train_background[indices]
+t_train_background = t_train_background[indices]
+
+# %%
+x_train_domain = np.concatenate((x_train_domain, x_train_background))
+t_train_domain = np.concatenate((t_train_domain, t_train_background))
 
 #%%
-x_train_domain, t_train_domain = dp.process_ds(x_domain, t_domain, labels_to_use_new, resample_cnt=200, aug_cnt=1)
-x_test_domain, t_test_domain = dp.process_ds(x_test_domain, t_test_domain, labels_to_use_new)
-
-#%%
-y_pred = model.predict(x_test_domain)
+x_train_domain, t_train_domain_oh = onehot_ds(x_train_domain, t_train_domain, new_labels_to_use)
+x_val, t_val_oh = onehot_ds(x_val, t_val, new_labels_to_use)
+x_test, t_test_oh = onehot_ds(x_test, t_test, new_labels_to_use)
 
 # %%
 base_encoder = tf.keras.models.Model(inputs=model.input, outputs=model.layers[-2].output, name='base')
-
-#%%
-extra_column = np.zeros((t_train.shape[0], 1))  # 예를 들어, 0으로 채워진 열을 추가
-t_train = np.hstack((t_train, extra_column))
-
-extra_column = np.zeros((t_val.shape[0], 1))  # 예를 들어, 0으로 채워진 열을 추가
-t_val = np.hstack((t_val, extra_column))
-
-#%%
-x_train_all = np.concatenate((x_train, x_train_domain))
-t_train_all = np.concatenate((t_train, t_train_domain))
-
-x_val_all = np.concatenate((x_val, x_test_domain))
-t_val_all = np.concatenate((t_val, t_test_domain))
-
 #%%
 # base_encoder와 클래스 수를 정의했다고 가정합니다.
-num_classes = model.layers[-1].output_shape[1] + 1  # 클래스 수를 올바르게 설정
+num_classes = len(new_labels_to_use)  # 클래스 수를 올바르게 설정
 
 # 새로운 분류기 레이어 생성
 new_classifier = tf.keras.Sequential([
@@ -139,7 +254,6 @@ new_classifier.build((None, base_encoder.output_shape[-1]))
 # 새로운 분류기 모델에 양자화를 적용
 quantize_model = tfmot.quantization.keras.quantize_model
 qat_classifier = quantize_model(new_classifier)
-
 # Functional API를 사용하여 base_encoder와 qat_classifier를 연결
 inputs = base_encoder.input
 x = base_encoder(inputs, training=False)
@@ -161,11 +275,7 @@ transfer_model.summary()
 
 # %%
 # Train the model with your data
-now = datetime.now()
-
-history = transfer_model.fit(x_train_all, t_train_all, validation_data=(x_val, t_val), epochs=30, batch_size=128)
-
-print("Training time: ", datetime.now() - now)
+history = transfer_model.fit(x_train_domain, t_train_domain_oh, validation_data=(x_val, t_val_oh), epochs=50, batch_size=128)
 # %%
 # for layer in transfer_model.layers:
 #     layer.trainable = True
@@ -178,11 +288,11 @@ print("Training time: ", datetime.now() - now)
 
 #%%
 # Save the model
-saved_model_dir = os.path.join(domain_dir, address)
+saved_model_dir = os.path.join(domain_model_path)
 transfer_model.save(saved_model_dir)
 
 # %%
-rep_ds = x_train_all[:3000]
+rep_ds = x_train_domain[:3000]
 def representative_data_gen():
     for input_value in tf.data.Dataset.from_tensor_slices(rep_ds).batch(1).take(100):
         yield [input_value]
@@ -199,12 +309,12 @@ converter_int8.inference_output_type = tf.int8  # or tf.uint8
 
 tflite_model_int8 = converter_int8.convert()
 
-tflite_model_int8_dir = os.path.join(domain_dir, address+'.tflite')
+tflite_model_int8_dir = os.path.join(model_dir, address+'.tflite')
 # tflite_model_name = saved_model_name + '.tflite'
 with open(tflite_model_int8_dir, 'wb') as f:
     f.write(tflite_model_int8)
 
-print("Conversion time: ", datetime.now() - now)
-# %%
-print(tf.__version__)
+logging.info(f"{address}: training time - {datetime.now() - now}")
+
+# print("Conversion time: ", datetime.now() - now)
 # %%

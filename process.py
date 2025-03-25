@@ -73,7 +73,7 @@ class SoundProcess(Process):
         self.buffer = {}
 
     def _run(self):
-        path_base = os.path.join(os.path.dirname(os.path.realpath(__file__)), "data")
+        path_base = os.path.join(os.path.dirname(os.path.realpath(__file__)), "programdata", "datasets")
         while True:
             item = self.queue.get()
             if item is None:  # MODIFIED: shutdown signal detected
@@ -89,7 +89,7 @@ class SoundProcess(Process):
                 # save buffer to file
                 if len(self.buffer[address]) > 0:
                     feature = np.array(self.buffer[address])
-                    dir_path = os.path.join(path_base, location, device_type, address, service_name, time_dt.strftime("%Y-%m-%d"))
+                    dir_path = os.path.join(path_base, address, "features", time_dt.strftime("%Y-%m-%d"))
                     try:
                         os.makedirs(dir_path, exist_ok=True)
                     except:
@@ -104,53 +104,62 @@ class DataProcess(Process):
     def __init__(self):
         self.queue = mp.Queue()
         self.process = mp.Process(target=self._run)
-    
+
     def _rawdata_result_handling_func(self, location, device_type, address, service_name, char_name, received_time, data, mode='a'):
         def swapEndianness(hexstring):
             ba = bytearray.fromhex(hexstring)
             ba.reverse()
             return ba.hex()
-        
+
         path_base = os.path.join(os.path.dirname(os.path.realpath(__file__)), "data")
         dir_path = os.path.join(path_base, location, device_type, address, service_name, char_name)
         try:
             os.makedirs(dir_path, exist_ok=True)
         except:
             pass
+
         time_dt = datetime.fromtimestamp(received_time)
         filename = time_dt.strftime("%Y-%m-%d") + ".txt"
-        with open(os.path.join(dir_path, filename), mode) as f:
+        final_path = os.path.join(dir_path, filename)
+        tmp_path = final_path + ".tmp"
+
+        # Write into tmp file by appending to the existing file content
+        with open(tmp_path, 'w') as tmp_file:
+            # Copy existing content if present
+            if os.path.exists(final_path):
+                with open(final_path, 'r') as original_file:
+                    tmp_file.write(original_file.read())
+
+            # Start appending new logs
             if service_name == "inference":
                 if char_name == "rawdata":
-                    if os.path.getsize(os.path.join(dir_path, filename)) == 0:
-                        f.write("time,GridEye,Direction,ENV,temp,humid,iaq,eco2,bvoc,")
-                        f.write("SOUND," + ",".join(sound_classlist) + "\n")
+                    if not os.path.exists(final_path) or os.path.getsize(final_path) == 0:
+                        tmp_file.write("time,GridEye,Direction,ENV,temp,humid,iaq,eco2,bvoc,")
+                        tmp_file.write("SOUND," + ",".join(sound_classlist) + "\n")
+
                     fmt = '<BBBfffff' + 'B' + str(num_sound_labels) + 'b'
                     inference_unpacked_data = struct.unpack(fmt, data[:24 + num_sound_labels])
-                    file_msg = ','.join(map(str, inference_unpacked_data))
                     dequantized_values = [(value + 128) / 256 for value in inference_unpacked_data[-num_sound_labels:]]
                     dequantized_str = ','.join(map(str, dequantized_values))
                     file_msg_final = ','.join(map(str, inference_unpacked_data[:-num_sound_labels])) + ',' + dequantized_str
-                    f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S") + "," + file_msg_final + "\n")
+                    tmp_file.write(time_dt.strftime("%Y-%m-%d %H:%M:%S") + "," + file_msg_final + "\n")
+
                 elif char_name == "debugstr":
                     try:
                         debug_string = data.decode('utf-8') if isinstance(data, bytearray) else str(data)
                         debug_dict = json.loads(debug_string)
                         debug_dict["timestamp"] = time_dt.strftime("%Y-%m-%d %H:%M:%S")
-                        
-                        json.dump(debug_dict, f, ensure_ascii=False)
-                        f.write("\n")
-                    except json.JSONDecodeError as e:
+                        json.dump(debug_dict, tmp_file, ensure_ascii=False)
+                        tmp_file.write("\n")
+                    except json.JSONDecodeError:
                         debug_string = data.decode('utf-8') if isinstance(data, bytearray) else str(data)
-                        if debug_string.endswith("\n"):
-                            f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S") + "," + debug_string)
-                        else:
-                            f.write(time_dt.strftime("%Y-%m-%d %H:%M:%S") + "," + debug_string + "\n")
-                        # logging.log(f"JSONDecodeError: {e}")
-                        # logging.log(f"Invalid JSON: {repr(debug_string)}")
-
+                        line = debug_string.rstrip("\n")
+                        tmp_file.write(f"{time_dt.strftime('%Y-%m-%d %H:%M:%S')},{line}\n")
             else:
                 return
+
+        # Atomically replace original file with the updated tmp file
+        os.replace(tmp_path, final_path)
             
     def _run(self):
         while True:
@@ -224,7 +233,11 @@ class LogProcess(Process):
 
         while True:
             item = self.queue.get()
+<<<<<<< HEAD
             if item is None:  # shutdown signal detected
+=======
+            if item is None:  # MODIFIED: shutdown signal detected
+>>>>>>> origin/develop
                 break
  
             location, device_type, address, service_name, char_name, received_time, data = item
