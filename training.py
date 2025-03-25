@@ -82,7 +82,6 @@ initial_files = glob.glob(domain_dataset_initial_dir + '/*/*.wav')
 pseudo_files = glob.glob(domain_dataset_pseudo_dir + '/*/*.wav')
 
 #%%
-#%%
 def mels_dataset(dataset_base_path, dataset_files, sr, wav_len, hop_len, n_mels, n_fft, n_hop, to_db=False):
     process_name = 'mels'
     category = os.path.split(dataset_base_path)[-1]
@@ -169,6 +168,71 @@ x_domain, t_domain = process_ds(x_domain, t_domain, resample_cnt=200, aug_cnt=1,
 
 x_train_domain = np.concatenate((x_train, x_domain))
 t_train_domain = np.concatenate((t_train, t_domain))
+
+# %%
+def extract_windows(data: np.ndarray, time_steps: int = 32, overlap: float = 0.5, use_last: int = 128) -> np.ndarray:
+    """
+    Extract sliding windows from the last portion of a 2D feature sequence.
+    Each window is shaped (feature_dim, time_steps, 1), suitable for CNN input.
+
+    Parameters:
+        data (np.ndarray): Input array with shape (time, feature_dim), e.g., (173, 48)
+        time_steps (int): Length of each sliding window along the time axis (default: 32)
+        overlap (float): Overlap ratio between windows (0.0 to <1.0), default is 0.5
+        use_last (int): Number of most recent time steps to use (default: 128)
+
+    Returns:
+        np.ndarray: Array of shape (num_windows, feature_dim, time_steps, 1)
+    """
+    assert 0.0 <= overlap < 1.0, "overlap must be in the range [0.0, 1.0)."
+    assert data.shape[0] >= use_last, "Input data is shorter than 'use_last'."
+
+    # Use only the last 'use_last' time steps
+    data = data[-use_last:]  # shape: (use_last, feature_dim)
+    
+    step_size = int(time_steps * (1 - overlap))
+    windows = []
+
+    for start in range(0, use_last - time_steps + 1, step_size):
+        window = data[start:start + time_steps]  # shape: (time_steps, feature_dim)
+        window = window.T  # transpose to (feature_dim, time_steps)
+        window = np.expand_dims(window, axis=-1)  # add channel dimension: (feature_dim, time_steps, 1)
+        windows.append(window)
+
+    return np.stack(windows)
+# %%
+# Recursively find all .npz files
+npz_files = glob.glob(os.path.join(domain_dataset_dir, "features", "**", "*.npz"), recursive=True)
+
+x_train_background = []
+t_train_background = []
+
+for file_path in npz_files:
+    try:
+        with np.load(file_path) as npz:
+            feature = npz['feature']  # make sure the key is 'feature'
+            windows = extract_windows(feature)  # shape: (n, 48, 32, 1)
+            x_train_background.append(windows)
+            t_train_background.extend(['background'] * len(windows))
+    except Exception as e:
+        print(f"Failed to process {file_path}: {e}")
+
+# Stack the feature arrays into one big array
+x_train_background = np.concatenate(x_train_background, axis=0)  # shape: (total_windows, 48, 32, 1)
+t_train_background = np.array(t_train_background)  # shape: (total_windows,)
+
+# Sample a subset of the background data
+num_samples = 400
+total = len(x_train_background)
+
+indices = np.random.choice(total, size=num_samples, replace=(total < num_samples))
+
+x_train_background = x_train_background[indices]
+t_train_background = t_train_background[indices]
+
+# %%
+x_train_domain = np.concatenate((x_train_domain, x_train_background))
+t_train_domain = np.concatenate((t_train_domain, t_train_background))
 
 #%%
 x_train_domain, t_train_domain_oh = onehot_ds(x_train_domain, t_train_domain, new_labels_to_use)

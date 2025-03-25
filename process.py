@@ -73,7 +73,7 @@ class SoundProcess(Process):
         self.buffer = {}
 
     def _run(self):
-        path_base = os.path.join(os.path.dirname(os.path.realpath(__file__)), "data")
+        path_base = os.path.join(os.path.dirname(os.path.realpath(__file__)), "programdata", "datasets")
         while True:
             item = self.queue.get()
             if item is None:  # MODIFIED: shutdown signal detected
@@ -89,7 +89,7 @@ class SoundProcess(Process):
                 # save buffer to file
                 if len(self.buffer[address]) > 0:
                     feature = np.array(self.buffer[address])
-                    dir_path = os.path.join(path_base, location, device_type, address, service_name, time_dt.strftime("%Y-%m-%d"))
+                    dir_path = os.path.join(path_base, address, "features", time_dt.strftime("%Y-%m-%d"))
                     try:
                         os.makedirs(dir_path, exist_ok=True)
                     except:

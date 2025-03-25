@@ -352,7 +352,7 @@ class Device:
                 model_data = f.read()
             model_chunk = model_data[self.model_seq * self.model_chunk_size:(self.model_seq + 1) * self.model_chunk_size]
             send_packet = ModelDataPacket(cmd=MODEL_UPDATE_CMD_DATA, seq=self.model_seq, data=model_chunk)
-            if self.model_seq%10 == 0:
+            if self.model_seq%10 == 0 or self.model_seq == total_chunk:
                 logging.info('%s: Sending model data %d/%d', self.config_dict['address'], self.model_seq, total_chunk)
             await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
         except Exception as e:
