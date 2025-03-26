@@ -121,8 +121,8 @@ async def main_worker(server):
         for dev in target_devices:
             current_device = device.get_device_by_address(dev.address)
             if current_device is None:
-                current_device = device.Device(dev)
-                if current_device.config_dict['type'] == "DE&N":
+                if dev.name == "DE&N":
+                    current_device = device.Device(dev)
                     # current_device.manager_queue = manager.get_queue()  # remains for legacy usage if needed
                     current_device.sound_queue = sound_process.get_queue()
                     current_device.data_queue = data_process.get_queue()
@@ -133,8 +133,6 @@ async def main_worker(server):
                         logging.info('%s connected', dev)
                     else:
                         logging.info('%s connection failed', dev)
-                else:
-                    await current_device.remove()
             else:
                 if await current_device.ble_client_start():
                     logging.info('%s reconnected', dev)
@@ -228,18 +226,18 @@ if __name__ == "__main__":
     parser.add_argument('-r', '--run', action='store_true', help='run slimhub client')
     parser.add_argument('-c', '--config', nargs=3, help='configure device', 
                         metavar=('address', 'target', 'data'))
-    parser.add_argument('--reset', nargs=1, help='run slimhub client',
-                        metavar=('address'))
     parser.add_argument('-s', '--service', nargs=4, help='manage characteristic notification', 
                         metavar=('address', 'enable/disable', 'service', 'characteristic'))
-    parser.add_argument('--model', nargs=2, help='sound model configuration',
-                        metavar=('address', 'command'))
     parser.add_argument('-f', '--feature', nargs=2, help='sound feature collection',
                         metavar=('address', 'start/stop'))
     parser.add_argument('-a', '--apply', action='store_true', help='apply config file')
     parser.add_argument('-l', '--list', action='store_true', help='list registered devices')
     parser.add_argument('-q', '--quit', action='store_true', help='quit slimhub client')
-    parser.add_argument('-hc', '--hubconfig', nargs=2, help='Update hub configuration', metavar=('key', 'value'))
+    parser.add_argument('--hubconfig', nargs=2, help='Update hub configuration', metavar=('key', 'value'))
+    parser.add_argument('--reset', nargs=1, help='reset device',
+                        metavar=('address'))
+    parser.add_argument('--model', nargs=2, help='sound model configuration',
+                        metavar=('address', 'command'))
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
