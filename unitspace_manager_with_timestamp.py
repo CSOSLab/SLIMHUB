@@ -258,33 +258,18 @@ class UnitspaceManager_new:
                 await device_obj.unitspace_existence_callback("weak_enter")
                 self.update_graph_state(address, location, received_time)
 
-    # ===== [추가/변경된 부분] =====
-    # update_graph_state()에서 이전 활성화된 노드와 새로 활성화되는 노드가 다를 경우,
-    # 이전 노드에 대해 exit callback("strong_exit")을 호출하도록 수정하였습니다.
-    def update_graph_state(self, address, new_location, timestamp):
+    def update_graph_state(self, address, location, timestamp):
         graph = self.graph
-
-        # 이전 device record에서 활성화된 노드 확인
-        previous_location = None
-        if address in graph.connected_devices_unitspace_process:
-            previous_location, last_time, state = graph.connected_devices_unitspace_process[address]
-
-        # 이전 활성화된 노드가 새 노드와 다르다면 exit callback 호출
-        if previous_location is not None and previous_location != new_location:
-            from device import get_device_by_address
-            device_obj = get_device_by_address(address)
-            asyncio.create_task(device_obj.unitspace_existence_callback("strong_exit"))
-            print(f"[EXIT CALLBACK] Triggered exit callback for {previous_location} because new active node is {new_location}.")
-
-        # 새 위치를 활성화, 나머지는 비활성화
+        if location not in graph.nodes:
+            print(f"[ERROR] Unknown location: {location}")
+            return
+        # 지정된 location만 활성화, 나머지는 비활성화
         for node_name, node in graph.nodes.items():
-            if node_name == new_location:
+            if node_name == location:
                 node.activate()
             else:
                 node.deactivate()
-        graph.record_activation_time(new_location, timestamp)
-        # device record 업데이트
+        graph.record_activation_time(location, timestamp)
         if address in graph.connected_devices_unitspace_process:
-            graph.connected_devices_unitspace_process[address] = (new_location, timestamp, True)
+            graph.connected_devices_unitspace_process[address] = (location, timestamp, True)
         graph.display_graph_lite(datetime.fromtimestamp(timestamp))
-    # ===== 끝 =====
