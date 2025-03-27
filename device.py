@@ -522,7 +522,7 @@ class DeviceManager:
                 await device_obj.model_remove()
                 return f"{address} Model removed".encode()
             else:
-                return "Argument 2 must be 'start', 'train' or 'erase'".encode()
+                return "Argument 2 must be 'update', 'train' or 'remove'".encode()
 
         elif cmd == 'feature':
             if commands[2] == 'start':
