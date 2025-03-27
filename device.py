@@ -71,9 +71,9 @@ class Device:
         
         # Sound model management
         self.training_model = False
-        self.dataset_path = os.path.join("programdata", "datasets", dev.address)
+        self.dataset_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "programdata", "datasets", dev.address)
         os.makedirs(self.dataset_path, exist_ok=True)
-        self.model_path = os.path.join("programdata", "models", dev.address + ".tflite")
+        self.model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "programdata", "models", dev.address + ".tflite")
         self.sending_model = False
         self.model_seq = 0
         self.model_size = 0
@@ -369,7 +369,8 @@ class Device:
     async def model_train_start(self):
         logging.info('%s: Model training start', self.config_dict['address'])
         self.training_model = True
-        args = ['python3', 'training.py', self.config_dict['address']]
+        training_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'training.py')
+        args = ['python3', training_script, self.config_dict['address']]
         proc = await asyncio.create_subprocess_exec(*args)
         async def monitor():
             await proc.wait()
@@ -522,7 +523,7 @@ class DeviceManager:
                 await device_obj.model_remove()
                 return f"{address} Model removed".encode()
             else:
-                return "Argument 2 must be 'start', 'train' or 'erase'".encode()
+                return "Argument 2 must be 'update', 'train' or 'remove'".encode()
 
         elif cmd == 'feature':
             if commands[2] == 'start':
