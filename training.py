@@ -50,7 +50,7 @@ generic_labels = np.array([
 ])
 
 #%%
-model_dir = os.path.join('programdata', 'models')
+model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'programdata', 'models')
 base_model_path = os.path.join(model_dir, 'base_model')
 dataset_path = os.path.join(model_dir, "training_dataset.npz")
 
@@ -68,7 +68,7 @@ t_test = original_dataset['t_test']
 x_val = original_dataset['x_val']
 t_val = original_dataset['t_val']
 # %%
-domain_dataset_dir = os.path.join('programdata', 'datasets', address)
+domain_dataset_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'programdata', 'datasets', address)
 os.makedirs(domain_dataset_dir, exist_ok=True)
 
 domain_dataset_initial_dir = os.path.join(domain_dataset_dir, 'initial')
