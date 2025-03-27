@@ -2,18 +2,20 @@
 from datetime import datetime
 import os
 import asyncio
+import heapq  # 다익스트라 알고리즘을 위한 heapq 모듈
 
-# 상수 정의
-EXIT_SIGNAL = 20
+# 상수 정의 (각 집의 환경에 맞게 수정 가능)
 ENTER_SIGNAL = 10
-INACTIVITY_TIMEOUT = 30  # 마지막 신호 이후 강제 exit (초)
-NOISE_THRESHOLD = 10       # 같은 공간 내 신호 무시 기준 (초)
+EXIT_SIGNAL = 20
+NOISE_THRESHOLD = 10         # 동일 공간 내 신호 간 최소 간격 (초)
+INACTIVITY_TIMEOUT = 30      # 강제 exit 시간 (테스트용 30초)
+EXIT_VERIFYING_TIME = 20     # 동일 노드에서 재신호 시 exit 판단 시간 (초)
 
 # 각 단위 공간(노드)를 표현하는 클래스
 class Node:
     def __init__(self, name):
         self.name = name
-        self.edges = {}  # neighbor_name -> 이동 가중치(시간)
+        self.edges = {}  # neighbor_name -> 이동 가중치(초)
         self.last_active_time = 0
         self.activated = False
 
@@ -32,14 +34,15 @@ class Node:
     def get_last_active_time(self):
         return self.last_active_time
 
-# 단위 공간 간의 연결관계를 관리하는 커스텀 그래프 클래스
+# 단위 공간 간 연결 관계를 관리하는 커스텀 그래프 클래스
 class CustomGraph:
     def __init__(self, timeout_buffer=5):
         self.nodes = {}
-        # address -> (location, last_time, active_state)
+        # address -> (location, last_time, state)
+        # state: True면 활성 상태, False면 강제 exit되었거나 미확인 상태
         self.connected_devices_unitspace_process = {}
-        # 각 이동에 대한 pending_moves 리스트 (각 항목: {from, to, start_time, timeout})
-        self.pending_moves = []
+        # 각 이동에 대한 pending_moves 리스트
+        self.pending_moves = []  # 각 항목: {from, to, start_time, timeout}
         self.timeout_buffer = timeout_buffer
 
     def add_node(self, name):
@@ -66,6 +69,11 @@ class CustomGraph:
                 node.deactivate()
             self.nodes[name].activate()
 
+    def clear_all_activation(self):
+        for node in self.nodes.values():
+            node.deactivate()
+        print("[CLEAR] All nodes deactivated.")
+
     def activate_node(self, name):
         if name in self.nodes:
             self.nodes[name].activate()
@@ -83,18 +91,44 @@ class CustomGraph:
             return self.nodes[name].get_last_active_time()
         return None
 
+    # --- 추가된 부분: 다익스트라 알고리즘을 사용하여 시작 노드로부터 모든 도착 노드까지의 최단 이동시간(총 가중치)를 계산 ---
+    def get_all_reachable_nodes(self, start_node):
+        distances = {node: float('inf') for node in self.nodes}
+        distances[start_node] = 0
+        visited = set()
+        pq = [(0, start_node)]
+        while pq:
+            d, current = heapq.heappop(pq)
+            if current in visited:
+                continue
+            visited.add(current)
+            for neighbor, weight in self.nodes[current].edges.items():
+                if neighbor not in visited:
+                    new_dist = d + weight
+                    if new_dist < distances[neighbor]:
+                        distances[neighbor] = new_dist
+                        heapq.heappush(pq, (new_dist, neighbor))
+        return distances
+    # --- 끝 ---
+
+    # --- 수정된 부분: pending_moves에 다중 경로(2칸 이상 연결된 노드 포함)를 추가 ---
     def add_pending_moves(self, from_node, received_time):
         self.pending_moves = []  # 기존 pending_moves 초기화
         if from_node in self.nodes:
-            for dest, move_time in self.nodes[from_node].edges.items():
-                timeout = move_time + self.timeout_buffer
+            # 다익스트라 알고리즘을 통해 from_node로부터 모든 도착 노드까지의 최단 이동시간을 계산
+            reachable = self.get_all_reachable_nodes(from_node)
+            for dest, total_weight in reachable.items():
+                if dest == from_node:
+                    continue
+                timeout = total_weight + self.timeout_buffer
                 self.pending_moves.append({
                     "from": from_node,
                     "to": dest,
                     "start_time": received_time,
                     "timeout": timeout
                 })
-                print(f"[PENDING] Possible move from {from_node} to {dest}, timeout={timeout}s")
+                print(f"[PENDING] Possible move from {from_node} to {dest} with total travel time {total_weight}s, timeout={timeout}s")
+    # --- 끝 ---
 
     def clear_pending_moves(self):
         self.pending_moves = []
@@ -108,7 +142,7 @@ class CustomGraph:
             if elapsed > move["timeout"]:
                 print(f"[TIMEOUT] Move from {move['from']} to {move['to']} expired (elapsed {elapsed}s).")
                 expired_moves.append(move)
-        # 만약 타임아웃된 이동이 있다면, 첫번째 pending move의 from으로 강제 복귀
+        # 만약 타임아웃된 이동이 있다면, 첫번째 pending move의 'from'으로 강제 복귀
         if expired_moves:
             forced_node = expired_moves[0]["from"]
             self.set_active_node(forced_node, force_activate=True)
@@ -142,33 +176,32 @@ class UnitspaceManager_new:
         self.graph.add_edge("LIVING", "KITCHEN", 10)
         self.graph.add_edge("LIVING", "BEDROOM", 10)
         self.graph.add_edge("LIVING", "ROOM", 15)
-        # 초기 활성 노드는 LIVING으로 설정
+        # 초기 활성 노드는 LIVING으로 설정 (테스트 코드이므로 불일치 가능)
         self.graph.set_active_node("LIVING", force_activate=True)
         self.inactivity_timeout = INACTIVITY_TIMEOUT
 
     async def pending_move_timeout_checker(self, interval=1):
-        from device import get_device_by_address  # (모듈 임포트)
+        from device import get_device_by_address  # 단말 객체 획득 (외부 모듈)
         while True:
             current_time = datetime.now().timestamp()
-            # pending move들의 타임아웃 여부 확인
+            # pending move 타임아웃 확인
             self.graph.check_pending_moves_timeout(current_time)
-            # 각 연결된 단말의 inactivity(신호 없음) 여부 확인
+            # 연결된 단말들의 inactivity 여부 확인 (상태와 상관없이 마지막 신호 기준)
             addresses_to_remove = []
             for address, (location, last_time, state) in list(self.graph.connected_devices_unitspace_process.items()):
-                if self.graph.nodes.get(location) and self.graph.nodes[location].activated:
-                    if current_time - last_time > self.inactivity_timeout:
-                        print(f"[INACTIVITY TIMEOUT] No signal from device {address} in {current_time - last_time:.0f}s. Forcing exit from {location}.")
-                        self.graph.deactivate_node(location)
-                        self.graph.record_activation_time(location, current_time)
-                        device_obj = get_device_by_address(address)
-                        asyncio.create_task(device_obj.unitspace_existence_callback("strong_exit"))
-                        addresses_to_remove.append(address)
+                if current_time - last_time > self.inactivity_timeout:
+                    print(f"[INACTIVITY TIMEOUT] No signal from device {address} in {current_time - last_time:.0f}s. Forcing exit from {location}.")
+                    self.graph.deactivate_node(location)
+                    self.graph.record_activation_time(location, current_time)
+                    device_obj = get_device_by_address(address)
+                    asyncio.create_task(device_obj.unitspace_existence_callback("strong_exit"))
+                    addresses_to_remove.append(address)
             for address in addresses_to_remove:
                 del self.graph.connected_devices_unitspace_process[address]
             await asyncio.sleep(interval)
 
     async def unitspace_existence_estimation(self, location, device_type, address, service_name, char_name, received_time, unpacked_data_list):
-        # 파라미터 signature는 변경하지 않음
+        # 파라미터 시그니처는 그대로 유지 (내용만 수정 가능)
         if service_name != "inference":
             return
 
@@ -177,14 +210,41 @@ class UnitspaceManager_new:
         received_signal = unpacked_data_list[1]
         graph = self.graph
 
-        # 동일 단위 공간 내에서의 불필요한 신호(노이즈/배회) 무시
+        # === [추가된 부분] ===
+        # 현재 device record가 존재하는 경우, 수신된 신호의 location이 기록된 현재 위치와 다르고
+        # 신호가 EXIT라면 이는 오래된(유효하지 않은) 신호로 판단하여 무시합니다.
+        if address in graph.connected_devices_unitspace_process:
+            current_location, last_time, state = graph.connected_devices_unitspace_process[address]
+            if received_signal == self.EXIT and location != current_location:
+                print(f"[IGNORE] Outdated EXIT signal from {location} while current location is {current_location}.")
+                return
+        # === 끝 ===
+
+        # 기존 device가 존재하는 경우
         if address in graph.connected_devices_unitspace_process:
             prev_location, last_time, state = graph.connected_devices_unitspace_process[address]
             if location == prev_location:
-                if received_time - last_time < NOISE_THRESHOLD:
+                time_diff = received_time - last_time
+                # NOISE_THRESHOLD 이하: 단순 중복 신호로 무시
+                if time_diff < NOISE_THRESHOLD:
                     print(f"[IGNORE] Redundant signal in {location} within {NOISE_THRESHOLD}s.")
                     graph.record_activation_time(location, received_time)
                     graph.connected_devices_unitspace_process[address] = (location, received_time, state)
+                    return
+                # NOISE_THRESHOLD 이상, EXIT_VERIFYING_TIME 미만: 모호한 신호로 전체 활성 상태 초기화 및 로그 기록
+                elif NOISE_THRESHOLD <= time_diff < EXIT_VERIFYING_TIME:
+                    print(f"[CLEAR] Ambiguous signal in {location} ({time_diff}s), clearing all activations and logging state.")
+                    graph.clear_all_activation()
+                    graph.display_graph_lite(datetime.fromtimestamp(received_time))
+                    graph.record_activation_time(location, received_time)
+                    return
+                # EXIT_VERIFYING_TIME 이상 경과 후 동일 노드 신호: 강제 exit로 판단
+                elif time_diff >= EXIT_VERIFYING_TIME:
+                    print(f"[EXIT VERIFYING] Signal from {location} after {EXIT_VERIFYING_TIME}s. Forcing exit (unknown next destination).")
+                    graph.clear_all_activation()
+                    graph.record_activation_time(location, received_time)
+                    await device_obj.unitspace_existence_callback("strong_exit")
+                    del graph.connected_devices_unitspace_process[address]
                     return
 
         # 신규 단말의 경우
@@ -195,27 +255,11 @@ class UnitspaceManager_new:
             await device_obj.unitspace_existence_callback("strong_enter")
             return
 
-        prev_location, last_time, state = graph.connected_devices_unitspace_process[address]
-
-        if received_signal == self.EXIT:
-            # 같은 공간에서의 짧은 간격 EXIT 신호는 무시
-            if location == prev_location and received_time - last_time < NOISE_THRESHOLD:
-                print(f"[IGNORE] Redundant EXIT signal in {location} within {NOISE_THRESHOLD}s.")
-                graph.record_activation_time(location, received_time)
-                graph.connected_devices_unitspace_process[address] = (location, received_time, state)
-                return
-
-            # EXIT 신호 수신 시 현재 공간 비활성화 및 인접 공간 이동 후보(pending_moves) 설정
-            graph.deactivate_node(prev_location)
-            graph.record_activation_time(prev_location, received_time)
-            graph.add_pending_moves(prev_location, received_time)
-            await device_obj.unitspace_existence_callback("strong_exit")
-            self.update_graph_state(address, prev_location, received_time)
-
-        elif received_signal == self.ENTER:
+        # 기존 단말이고, 신호가 다른 노드로 들어온 경우
+        # 이 경우, valid pending move가 존재하는 ENTER 신호로 처리합니다.
+        if received_signal == self.ENTER:
             pending_moves = graph.pending_moves
             if not pending_moves:
-                # pending move가 없으면 예상치 못한 ENTER로 판단 (weak_enter)
                 print(f"[UNEXPECTED] ENTER at {location} (no pending move).")
                 graph.set_active_node(location, force_activate=True)
                 graph.record_activation_time(location, received_time)
@@ -224,7 +268,7 @@ class UnitspaceManager_new:
                 self.update_graph_state(address, location, received_time)
                 return
 
-            # pending_moves 중 일치하는 이동이 있는지 확인
+            # pending_moves 중 해당 위치로의 이동 확인
             valid_move = None
             for move in pending_moves:
                 if move["to"] == location:
@@ -237,7 +281,10 @@ class UnitspaceManager_new:
                     print(f"[SUCCESS] Move from {valid_move['from']} to {location}, elapsed {elapsed}s.")
                     graph.set_active_node(location, force_activate=True)
                     graph.record_activation_time(location, received_time)
+                    # === [변경된 부분] ===
+                    # valid move 성공 시 device record를 즉시 새로운 location으로 업데이트합니다.
                     graph.connected_devices_unitspace_process[address] = (location, received_time, True)
+                    # === 끝 ===
                     graph.clear_pending_moves()
                     await device_obj.unitspace_existence_callback("strong_enter")
                 else:
@@ -249,7 +296,7 @@ class UnitspaceManager_new:
                     await device_obj.unitspace_existence_callback("weak_enter")
                 self.update_graph_state(address, location, received_time)
             else:
-                # pending move와 일치하지 않는 ENTER 신호인 경우
+                # pending move와 일치하지 않는 ENTER 신호
                 print(f"[INVALID] Unexpected ENTER at {location}.")
                 graph.set_active_node(location, force_activate=True)
                 graph.record_activation_time(location, received_time)
@@ -257,34 +304,22 @@ class UnitspaceManager_new:
                 graph.clear_pending_moves()
                 await device_obj.unitspace_existence_callback("weak_enter")
                 self.update_graph_state(address, location, received_time)
+        else:
+            # EXIT 신호인 경우, 위에서 처리되었거나(동일 공간, 중복 등) 이미 새로운 노드로 갱신되었어야 합니다.
+            pass
 
-    # ===== [추가/변경된 부분] =====
-    # update_graph_state()에서 이전 활성화된 노드와 새로 활성화되는 노드가 다를 경우,
-    # 이전 노드에 대해 exit callback("strong_exit")을 호출하도록 수정하였습니다.
-    def update_graph_state(self, address, new_location, timestamp):
+    def update_graph_state(self, address, location, timestamp):
         graph = self.graph
-
-        # 이전 device record에서 활성화된 노드 확인
-        previous_location = None
-        if address in graph.connected_devices_unitspace_process:
-            previous_location, last_time, state = graph.connected_devices_unitspace_process[address]
-
-        # 이전 활성화된 노드가 새 노드와 다르다면 exit callback 호출
-        if previous_location is not None and previous_location != new_location:
-            from device import get_device_by_address
-            device_obj = get_device_by_address(address)
-            asyncio.create_task(device_obj.unitspace_existence_callback("strong_exit"))
-            print(f"[EXIT CALLBACK] Triggered exit callback for {previous_location} because new active node is {new_location}.")
-
-        # 새 위치를 활성화, 나머지는 비활성화
+        if location not in graph.nodes:
+            print(f"[ERROR] Unknown location: {location}")
+            return
+        # 지정된 location만 활성화, 나머지는 deactivation
         for node_name, node in graph.nodes.items():
-            if node_name == new_location:
+            if node_name == location:
                 node.activate()
             else:
                 node.deactivate()
-        graph.record_activation_time(new_location, timestamp)
-        # device record 업데이트
+        graph.record_activation_time(location, timestamp)
         if address in graph.connected_devices_unitspace_process:
-            graph.connected_devices_unitspace_process[address] = (new_location, timestamp, True)
+            graph.connected_devices_unitspace_process[address] = (location, timestamp, True)
         graph.display_graph_lite(datetime.fromtimestamp(timestamp))
-    # ===== 끝 =====
