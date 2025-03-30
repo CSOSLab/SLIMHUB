@@ -77,9 +77,6 @@ class Device:
         self.sending_model = False
         self.model_seq = 0
         self.model_size = 0
-        if os.path.isfile(self.model_path):
-            with open(self.model_path, 'rb') as f:
-                self.model_size = len(f.read())
         self.collecting_feature = False
 
         self.user_in = False
@@ -293,18 +290,31 @@ class Device:
                     logging.warning("Failed to activate %s %s: %s", service_name, char_name, e)
                 #NEW CODE: Increase delay for service activation stability
                 await asyncio.sleep(0.2)  # NEW CODE (was 0.1)
+            return True
+        return False
     
     async def deactivate_service(self, service_name):
-        service = self.get_service_by_name(service_name)
-        for characteristic in service.characteristics:
-            char_name = dean_service_lookup.get(characteristic.uuid, None)
-            if char_name is None:
-                continue
-            try:
-                await self.ble_client.stop_notify(characteristic.uuid)
-            except Exception as e:
-                logging.warning(e)
-                pass
+        # service = self.get_service_by_name(service_name)
+        # for characteristic in service.characteristics:
+        #     char_name = dean_service_lookup.get(characteristic.uuid, None)
+        #     if char_name is None:
+        #         continue
+        #     try:
+        #         await self.ble_client.stop_notify(characteristic.uuid)
+        #     except Exception as e:
+        #         logging.warning(e)
+        #         pass
+        enable_list = self.enable.get(service_name, None)
+        if enable_list is not None:
+            for char_name in enable_list:
+                try:
+                    await self.deactivate_characteristic(service_name, char_name)
+                except Exception as e:
+                    logging.warning("Failed to deactivate %s %s: %s", service_name, char_name, e)
+                #NEW CODE: Increase delay for service activation stability
+                await asyncio.sleep(0.2)  # NEW CODE (was 0.1)
+            return True
+        return False
 
     async def init_services(self):
         try:
@@ -335,6 +345,9 @@ class Device:
         await self.ble_client.write_gatt_char(DEAN_UUID_CTS_CURRENT_TIME_CHAR, packed_data)
 
     async def model_update_start(self):
+        if os.path.isfile(self.model_path):
+            with open(self.model_path, 'rb') as f:
+                self.model_size = len(f.read())
         logging.info('%s: Model update start', self.config_dict['address'])
         send_packet = ModelPacket(cmd=MODEL_UPDATE_CMD_START)
         await self.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
@@ -491,8 +504,18 @@ class DeviceManager:
                     return f"{commands[1]}: characteristic {commands[3]} {commands[4]} disabled".encode()
                 else:
                     return f"{commands[1]}: characteristic {commands[3]} {commands[4]} disable failed".encode()
+            elif commands[2] == 'activate':
+                if await device_obj.activate_service(commands[3]):
+                    return f"{commands[1]}: service {commands[3]} activated".encode()
+                else:
+                    return f"{commands[1]}: service {commands[3]} activate failed".encode()
+            elif commands[2] == 'deactivate':
+                if await device_obj.deactivate_service(commands[3]):
+                    return f"{commands[1]}: service {commands[3]} deactivated".encode()
+                else:
+                    return f"{commands[1]}: service {commands[3]} deactivate failed".encode()
             else:
-                return "Argument 2 must be 'enable' or 'disable'".encode()
+                return "Argument 2 must be 'enable', 'disable', 'activate all', 'deactivate all'".encode()
         
         elif cmd == 'list':
             return_msg = f"{'Address':<20}{'Type':<10}{'Name':<15}{'Location':<15}{'Connected':<10}\n"
@@ -539,4 +562,3 @@ class DeviceManager:
         else:
             print("What? " + cmd + " " + str(type(cmd)))
             return b''
-        
