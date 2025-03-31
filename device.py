@@ -490,6 +490,8 @@ class DeviceManager:
         
         if cmd == 'reset':
             await device_obj.reset_device()
+            await device_obj.ble_client.disconnect()
+            device_obj.is_connected = False
             return_msg = f"Reset DEAN {commands[1]}"
             return return_msg.encode()
 
