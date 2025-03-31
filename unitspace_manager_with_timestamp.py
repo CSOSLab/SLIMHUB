@@ -7,7 +7,7 @@ import asyncio
 EXIT_SIGNAL = 20
 ENTER_SIGNAL = 10
 INACTIVITY_TIMEOUT = 30  # 마지막 신호 이후 강제 exit (초)
-NOISE_THRESHOLD = 10       # 같은 공간 내 신호 무시 기준 (초)
+NOISE_THRESHOLD = 15       # 같은 공간 내 신호 무시 기준 (초)
 
 last_address = None
 
@@ -218,7 +218,8 @@ class UnitspaceManager_new:
             graph.record_activation_time(prev_location, received_time)
             graph.add_pending_moves(prev_location, received_time)
             # await device_obj.unitspace_existence_callback("strong_exit")
-            await device_obj.unitspace_existence_callback("weak_enter")
+            if not address == last_address:
+                await device_obj.unitspace_existence_callback("weak_enter")
             last_device_obj = get_device_by_address(last_address)
             await last_device_obj.unitspace_existence_callback("strong_exit")
             self.update_graph_state(address, prev_location, received_time)
@@ -231,7 +232,8 @@ class UnitspaceManager_new:
                 graph.set_active_node(location, force_activate=True)
                 graph.record_activation_time(location, received_time)
                 graph.connected_devices_unitspace_process[address] = (location, received_time, True)
-                await device_obj.unitspace_existence_callback("weak_enter")         ## must be fixed later!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                if not address == last_address:
+                    await device_obj.unitspace_existence_callback("weak_enter")         ## must be fixed later!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 last_device_obj = get_device_by_address(last_address)
                 await last_device_obj.unitspace_existence_callback("strong_exit")
                 self.update_graph_state(address, location, received_time)
@@ -252,7 +254,8 @@ class UnitspaceManager_new:
                     graph.record_activation_time(location, received_time)
                     graph.connected_devices_unitspace_process[address] = (location, received_time, True)
                     graph.clear_pending_moves()
-                    await device_obj.unitspace_existence_callback("strong_enter")
+                    if not address == last_address:
+                        await device_obj.unitspace_existence_callback("strong_enter")
                     last_device_obj = get_device_by_address(last_address)
                     await last_device_obj.unitspace_existence_callback("strong_exit")
                 else:
@@ -261,7 +264,8 @@ class UnitspaceManager_new:
                     graph.record_activation_time(location, received_time)
                     graph.connected_devices_unitspace_process[address] = (location, received_time, True)
                     graph.clear_pending_moves()
-                    await device_obj.unitspace_existence_callback("weak_enter")
+                    if not address == last_address:
+                        await device_obj.unitspace_existence_callback("weak_enter")
                     last_device_obj = get_device_by_address(last_address)
                     await last_device_obj.unitspace_existence_callback("strong_exit")
                 self.update_graph_state(address, location, received_time)
@@ -272,10 +276,12 @@ class UnitspaceManager_new:
                 graph.record_activation_time(location, received_time)
                 graph.connected_devices_unitspace_process[address] = (location, received_time, True)
                 graph.clear_pending_moves()
-                await device_obj.unitspace_existence_callback("weak_enter")
+                if not address == last_address:
+                    await device_obj.unitspace_existence_callback("weak_enter")
                 last_device_obj = get_device_by_address(last_address)
                 await last_device_obj.unitspace_existence_callback("strong_exit")
                 self.update_graph_state(address, location, received_time)
+        print(f"Current input : {address}, Last input : {last_address}")
         last_address = address
 
     def update_graph_state(self, address, location, timestamp):
