@@ -139,11 +139,19 @@ class UnitspaceManager_new:
     def __init__(self):
         self.graph = CustomGraph(timeout_buffer=5)
         # 집 구조에 따른 노드 및 에지 설정
-        self.graph.add_edge("ENTRY", "LIVING", 10)
+        self.graph.add_edge("LIVING", "ENTRY", 10)
         self.graph.add_edge("LIVING", "TOILET", 5)
         self.graph.add_edge("LIVING", "KITCHEN", 10)
         self.graph.add_edge("LIVING", "BEDROOM", 10)
-        self.graph.add_edge("LIVING", "ROOM", 15)
+        
+        self.graph.add_edge("ENTRY", "TOILET", 10)
+        self.graph.add_edge("ETNRY", "KITCHEN", 20)
+        self.graph.add_edge("ENTRY", "BEDROOM", 20)
+        
+        self.graph.add_edge("TOILET", "KITCHEN", 20)
+        self.graph.add_edge("TOILET", "BEDROOM", 20)
+        
+        self.graph.add_edge("KITCHEN", "BEDROOM", 15)
         # 초기 활성 노드는 LIVING으로 설정
         self.graph.set_active_node("LIVING", force_activate=True)
         self.inactivity_timeout = INACTIVITY_TIMEOUT
@@ -223,6 +231,8 @@ class UnitspaceManager_new:
             last_device_obj = get_device_by_address(last_address)
             await last_device_obj.unitspace_existence_callback("strong_exit")
             self.update_graph_state(address, prev_location, received_time)
+            last_address = address
+            return
 
         elif received_signal == self.ENTER:
             pending_moves = graph.pending_moves
@@ -237,6 +247,7 @@ class UnitspaceManager_new:
                 last_device_obj = get_device_by_address(last_address)
                 await last_device_obj.unitspace_existence_callback("strong_exit")
                 self.update_graph_state(address, location, received_time)
+                last_address = address
                 return
 
             # pending_moves 중 일치하는 이동이 있는지 확인
@@ -269,6 +280,7 @@ class UnitspaceManager_new:
                     last_device_obj = get_device_by_address(last_address)
                     await last_device_obj.unitspace_existence_callback("strong_exit")
                 self.update_graph_state(address, location, received_time)
+                last_address = address
             else:
                 # pending move와 일치하지 않는 ENTER 신호인 경우
                 print(f"[INVALID] Unexpected ENTER at {location}.")
@@ -281,8 +293,9 @@ class UnitspaceManager_new:
                 last_device_obj = get_device_by_address(last_address)
                 await last_device_obj.unitspace_existence_callback("strong_exit")
                 self.update_graph_state(address, location, received_time)
-        print(f"Current input : {address}, Last input : {last_address}")
-        last_address = address
+                last_address = address
+        # print(f"Current input : {address}, Last input : {last_address}")
+        # last_address = address
 
     def update_graph_state(self, address, location, timestamp):
         graph = self.graph
