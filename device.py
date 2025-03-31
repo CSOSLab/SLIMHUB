@@ -24,8 +24,8 @@ def get_device_by_address(address):
 class DeviceError(Exception):
     pass
 
-# unitspace_manager = UnitspaceManager()
-unitspace_manager = UnitspaceManager_new()
+unitspace_manager = UnitspaceManager()
+# unitspace_manager = UnitspaceManager_new()
 
 class Device:
     sound_classlist = [
