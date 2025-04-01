@@ -107,6 +107,9 @@ class DataProcess(Process):
 
 
     def _rawdata_result_handling_func(self, location, device_type, address, service_name, char_name, received_time, data, mode='a'):
+        import os
+        from datetime import datetime
+
         path_base = os.path.join(os.path.dirname(os.path.realpath(__file__)), "data")
         dir_path = os.path.join(path_base, location, device_type, address, service_name, char_name)
         
@@ -116,33 +119,51 @@ class DataProcess(Process):
             pass
 
         time_dt = datetime.fromtimestamp(received_time)
-        filename = time_dt.strftime("%Y-%m-%d") + ".txt"
-        final_path = os.path.join(dir_path, filename)
+        raw_filename = time_dt.strftime("%Y-%m-%d") + ".txt"
+        raw_path = os.path.join(dir_path, raw_filename)
 
-        with open(final_path, mode) as f:
-            if service_name == "grideye" and char_name == "raw":
-                try:
-                    if not isinstance(data, (bytes, bytearray)) or len(data) != 260:
+        if service_name == "grideye" and char_name == "raw":
+            try:
+                if not isinstance(data, (bytes, bytearray)) or len(data) != 260:
+                    with open(raw_path, mode) as f:
                         f.write(f"{time_dt.strftime('%H:%M:%S')}, Error: invalid grideye data length ({len(data)} bytes)\n")
-                        return
+                    return
 
-                    values = []
-                    for i in range(0, 64 * 4, 4):
-                        val = int.from_bytes(data[i:i+4], byteorder='little')
-                        values.append(val)
+                # 값 파싱
+                values = []
+                for i in range(0, 64 * 4, 4):
+                    val = int.from_bytes(data[i:i+4], byteorder='little')
+                    values.append(val)
 
-                    threshold = int.from_bytes(data[256:260], byteorder='little')
+                threshold = int.from_bytes(data[256:260], byteorder='little')
+                timestamp = time_dt.strftime("%H:%M:%S")
 
-                    timestamp = time_dt.strftime("%H:%M:%S")
+                # 8x8 grid 구성 + 상하 반전
+                grid = [values[i:i+8] for i in range(0, 64, 8)][::-1]
+
+                # Row/Column 합 계산
+                row_sums = [sum(row) for row in grid]
+                col_sums = [sum(col) for col in zip(*grid)]
+                max_row_sum = max(row_sums)
+                max_col_sum = max(col_sums)
+
+                with open(raw_path, mode) as f:
                     f.write(f"{timestamp}, threshold: {threshold}\n")
 
-                    for i in range(0, 64, 8):
-                        row = values[i:i+8]
-                        f.write(" ".join(f"{v:4d}" for v in row) + "\n")
+                    for i, row in enumerate(grid):
+                        row_str = " ".join(f"{v:4d}" for v in row)
+                        if row_sums[i] == max_row_sum:
+                            row_str += "  *"
+                        f.write(row_str + "\n")
 
-                    f.write("\n")
+                    # Column max 표시줄
+                    col_mark_line = ""
+                    for col_sum in col_sums:
+                        col_mark_line += f"{'*' if col_sum == max_col_sum else '':>5}"
+                    f.write(col_mark_line + "\n\n")
 
-                except Exception as e:
+            except Exception as e:
+                with open(raw_path, mode) as f:
                     f.write(f"{time_dt.strftime('%H:%M:%S')}, Error parsing grideye data: {e}\n")
 
     def _run(self):

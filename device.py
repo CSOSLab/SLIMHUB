@@ -45,7 +45,7 @@ class Device:
 
     service_enable_default = {
         # 'sound': ['model'],
-        'grideye': ['raw'],
+        # 'grideye': ['raw'],
         # 'inference': ['rawdata', 'predict', 'debugstr']
     }
     model_chunk_size = 128
@@ -566,7 +566,17 @@ class DeviceManager:
                 await device_obj.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
                 return "Feature collection ended".encode()
             else:
-                return "Argument 2 must be 'start' or 'end'".encode()        
+                return "Argument 2 must be 'start' or 'end'".encode()
+        elif cmd == 'grideye':
+            if await device_obj.activate_characteristic('grideye', 'raw'):
+                # wait for 10 sec
+                await asyncio.sleep(10)
+                if await device_obj.deactivate_characteristic('grideye', 'raw'):
+                    return f"{commands[1]}: grideye_sampled".encode()
+                else:
+                    return f"{commands[1]}: grideye_sample not stopped".encode()
+            else:
+                return f"{commands[1]}: grideye_sample not started".encode()
         else:
             print("What? " + cmd + " " + str(type(cmd)))
             return b''

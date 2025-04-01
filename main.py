@@ -233,6 +233,8 @@ if __name__ == "__main__":
     parser.add_argument('-a', '--apply', action='store_true', help='apply config file')
     parser.add_argument('-l', '--list', action='store_true', help='list registered devices')
     parser.add_argument('-q', '--quit', action='store_true', help='quit slimhub client')
+    parser.add_argument('-g', '--grideye', nargs=1, help='grideye sample start',
+                        metavar=('address'))
     parser.add_argument('--hubconfig', nargs=2, help='Update hub configuration', metavar=('key', 'value'))
     parser.add_argument('--reset', nargs=1, help='reset device',
                         metavar=('address'))
@@ -270,6 +272,8 @@ if __name__ == "__main__":
         send_command('model', args_dict)
     if args.feature:
         send_command('feature', args_dict)
+    if args.grideye:
+        send_command('grideye', args_dict)
     if args.apply:
         send_command('apply', args_dict)
     if args.list:
