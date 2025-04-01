@@ -44,9 +44,9 @@ class Device:
     ]
 
     service_enable_default = {
-        'sound': ['model'],
-        'grideye': ['prediction'],
-        'inference': ['rawdata', 'predict', 'debugstr']
+        # 'sound': ['model'],
+        'grideye': ['raw'],
+        # 'inference': ['rawdata', 'predict', 'debugstr']
     }
     model_chunk_size = 128
 
@@ -174,7 +174,13 @@ class Device:
                     self.log_queue.put([self.config_dict['location'], self.config_dict['type'],
                                          self.config_dict['address'], service_name, char_name,
                                          received_time, data])
-        
+        elif service_name == 'grideye':
+            if char_name == 'raw':
+                if not self.data_queue.full():
+                    self.data_queue.put([self.config_dict['location'], self.config_dict['type'],
+                                         self.config_dict['address'], service_name, char_name,
+                                         received_time, data])
+                
     def _ble_disconnected_callback(self, client):
         logging.info('%s: %s disconnected', client.address, self.config_dict['type'])
         self.model_seq = 0
@@ -477,10 +483,10 @@ class DeviceManager:
             address = commands[1]
             device_obj = get_device_by_address(address)
             if device_obj is None:
-                print("something wrong 1")
+                print(f"{address} is not registered")
                 return (address + ' is not registered').encode()
             if device_obj.is_connected == False:
-                print("something wrong 2")
+                print(f"{address} is not connected")
                 return (address + ' is not connected').encode()
 
         if cmd == 'config':
@@ -517,7 +523,7 @@ class DeviceManager:
                 else:
                     return f"{commands[1]}: service {commands[3]} deactivate failed".encode()
             else:
-                return "Argument 2 must be 'enable', 'disable', 'activate all', 'deactivate all'".encode()
+                return "Argument 2 must be 'enable', 'disable', 'activate', 'deactivate'".encode()
         
         elif cmd == 'list':
             return_msg = f"{'Address':<20}{'Type':<10}{'Name':<15}{'Location':<15}{'Connected':<10}\n"

@@ -105,14 +105,11 @@ class DataProcess(Process):
         self.queue = mp.Queue()
         self.process = mp.Process(target=self._run)
 
-    def _rawdata_result_handling_func(self, location, device_type, address, service_name, char_name, received_time, data, mode='a'):
-        def swapEndianness(hexstring):
-            ba = bytearray.fromhex(hexstring)
-            ba.reverse()
-            return ba.hex()
 
+    def _rawdata_result_handling_func(self, location, device_type, address, service_name, char_name, received_time, data, mode='a'):
         path_base = os.path.join(os.path.dirname(os.path.realpath(__file__)), "data")
         dir_path = os.path.join(path_base, location, device_type, address, service_name, char_name)
+        
         try:
             os.makedirs(dir_path, exist_ok=True)
         except:
@@ -121,46 +118,33 @@ class DataProcess(Process):
         time_dt = datetime.fromtimestamp(received_time)
         filename = time_dt.strftime("%Y-%m-%d") + ".txt"
         final_path = os.path.join(dir_path, filename)
-        tmp_path = final_path + ".tmp"
 
-        # Write into tmp file by appending to the existing file content
-        with open(tmp_path, 'w') as tmp_file:
-            # Copy existing content if present
-            if os.path.exists(final_path):
-                with open(final_path, 'r') as original_file:
-                    tmp_file.write(original_file.read())
+        with open(final_path, mode) as f:
+            if service_name == "grideye" and char_name == "raw":
+                try:
+                    if not isinstance(data, (bytes, bytearray)) or len(data) != 260:
+                        f.write(f"{time_dt.strftime('%H:%M:%S')}, Error: invalid grideye data length ({len(data)} bytes)\n")
+                        return
 
-            # Start appending new logs
-            if service_name == "inference":
-                if char_name == "rawdata":
-                    if not os.path.exists(final_path) or os.path.getsize(final_path) == 0:
-                        tmp_file.write("time,GridEye,Direction,ENV,temp,humid,iaq,eco2,bvoc,")
-                        tmp_file.write("SOUND," + ",".join(sound_classlist) + "\n")
+                    values = []
+                    for i in range(0, 64 * 4, 4):
+                        val = int.from_bytes(data[i:i+4], byteorder='little')
+                        values.append(val)
 
-                    fmt = '<BBBfffff' + 'B' + str(num_sound_labels) + 'b'
-                    inference_unpacked_data = struct.unpack(fmt, data[:24 + num_sound_labels])
-                    dequantized_values = [(value + 128) / 256 for value in inference_unpacked_data[-num_sound_labels:]]
-                    dequantized_str = ','.join(map(str, dequantized_values))
-                    file_msg_final = ','.join(map(str, inference_unpacked_data[:-num_sound_labels])) + ',' + dequantized_str
-                    tmp_file.write(time_dt.strftime("%Y-%m-%d %H:%M:%S") + "," + file_msg_final + "\n")
+                    threshold = int.from_bytes(data[256:260], byteorder='little')
 
-                elif char_name == "debugstr":
-                    try:
-                        debug_string = data.decode('utf-8') if isinstance(data, bytearray) else str(data)
-                        debug_dict = json.loads(debug_string)
-                        debug_dict["timestamp"] = time_dt.strftime("%Y-%m-%d %H:%M:%S")
-                        json.dump(debug_dict, tmp_file, ensure_ascii=False)
-                        tmp_file.write("\n")
-                    except json.JSONDecodeError:
-                        debug_string = data.decode('utf-8') if isinstance(data, bytearray) else str(data)
-                        line = debug_string.rstrip("\n")
-                        tmp_file.write(f"{time_dt.strftime('%Y-%m-%d %H:%M:%S')},{line}\n")
-            else:
-                return
+                    timestamp = time_dt.strftime("%H:%M:%S")
+                    f.write(f"{timestamp}, threshold: {threshold}\n")
 
-        # Atomically replace original file with the updated tmp file
-        os.replace(tmp_path, final_path)
-            
+                    for i in range(0, 64, 8):
+                        row = values[i:i+8]
+                        f.write(" ".join(f"{v:4d}" for v in row) + "\n")
+
+                    f.write("\n")
+
+                except Exception as e:
+                    f.write(f"{time_dt.strftime('%H:%M:%S')}, Error parsing grideye data: {e}\n")
+
     def _run(self):
         while True:
             item = self.queue.get()
