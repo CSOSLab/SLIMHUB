@@ -99,20 +99,28 @@ class SoundProcess(Process):
                     np.savez(os.path.join(dir_path, filename), feature=feature)
                     self.buffer[address] = []
             
+from collections import deque
+import os
+from datetime import datetime
+import statistics
+
+row_history = [deque(maxlen=10) for _ in range(8)]
+col_history = [deque(maxlen=10) for _ in range(8)]
+
+row_x_index_queue = deque(maxlen=20)
+col_x_index_queue = deque(maxlen=20)
+
+threshold_multiplier = 4.0  # <- 여기를 1.5, 3.0 등으로 조절 가능
 
 class DataProcess(Process):
     def __init__(self):
         self.queue = mp.Queue()
         self.process = mp.Process(target=self._run)
 
-
     def _rawdata_result_handling_func(self, location, device_type, address, service_name, char_name, received_time, data, mode='a'):
-        import os
-        from datetime import datetime
-
         path_base = os.path.join(os.path.dirname(os.path.realpath(__file__)), "data")
         dir_path = os.path.join(path_base, location, device_type, address, service_name, char_name)
-        
+
         try:
             os.makedirs(dir_path, exist_ok=True)
         except:
@@ -129,12 +137,8 @@ class DataProcess(Process):
                         f.write(f"{time_dt.strftime('%H:%M:%S')}, Error: invalid grideye data length ({len(data)} bytes)\n")
                     return
 
-                # 값 파싱
-                values = []
-                for i in range(0, 64 * 4, 4):
-                    val = int.from_bytes(data[i:i+4], byteorder='little')
-                    values.append(val)
-
+                # 64개의 int32 값
+                values = [int.from_bytes(data[i:i+4], byteorder='little') for i in range(0, 64 * 4, 4)]
                 threshold = int.from_bytes(data[256:260], byteorder='little')
                 timestamp = time_dt.strftime("%H:%M:%S")
 
@@ -147,20 +151,104 @@ class DataProcess(Process):
                 max_row_sum = max(row_sums)
                 max_col_sum = max(col_sums)
 
+                # 이상치 감지
+                row_flags = []
+                col_flags = []
+
+                for i, val in enumerate(row_sums):
+                    hist = row_history[i]
+                    if len(hist) >= 2:
+                        mean = sum(hist) / len(hist)
+                        std = (sum((x - mean) ** 2 for x in hist) / len(hist)) ** 0.5
+                        row_flags.append(abs(val - mean) > threshold_multiplier * std)
+                    else:
+                        row_flags.append(False)
+                    hist.append(val)
+
+                for i, val in enumerate(col_sums):
+                    hist = col_history[i]
+                    if len(hist) >= 2:
+                        mean = sum(hist) / len(hist)
+                        std = (sum((x - mean) ** 2 for x in hist) / len(hist)) ** 0.5
+                        col_flags.append(abs(val - mean) > threshold_multiplier * std)
+                    else:
+                        col_flags.append(False)
+                    hist.append(val)
+
+                any_row_change = any(row_flags)
+                any_col_change = any(col_flags)
+
+                # X 인덱스 기록
+                x_row_index = None
+                if any_row_change:
+                    row_deltas = [
+                        abs(row_sums[i] - (sum(row_history[i]) / len(row_history[i])))
+                        if row_flags[i] else -1
+                        for i in range(8)
+                    ]
+                    x_row_index = row_deltas.index(max(row_deltas))
+                row_x_index_queue.append(x_row_index)
+
+                x_col_index = None
+                if any_col_change:
+                    col_deltas = [
+                        abs(col_sums[i] - (sum(col_history[i]) / len(col_history[i])))
+                        if col_flags[i] else -1
+                        for i in range(8)
+                    ]
+                    x_col_index = col_deltas.index(max(col_deltas))
+                col_x_index_queue.append(x_col_index)
+
                 with open(raw_path, mode) as f:
                     f.write(f"{timestamp}, threshold: {threshold}\n")
 
+                    # ✅ 행 출력
                     for i, row in enumerate(grid):
-                        row_str = " ".join(f"{v:4d}" for v in row)
-                        if row_sums[i] == max_row_sum:
-                            row_str += "  *"
-                        f.write(row_str + "\n")
+                        row_sum = row_sums[i]
+                        row_std = statistics.stdev(row_history[i]) if len(row_history[i]) > 1 else 0  # ✅ 시간 기준
 
-                    # Column max 표시줄
+                        row_str = "".join(f"{v:>7d}" for v in row)
+
+                        mark = ""
+                        if any_row_change:
+                            if row_sum == max_row_sum:
+                                mark = "  X"
+                            elif row_flags[i]:
+                                mark = "  *"
+
+                        summary = f"\t{row_sum:5d} {row_std:6.1f}"
+                        f.write(row_str + mark + summary + "\n")
+
+                    # ✅ 열 출력
+                    col_sum_line = ""
+                    col_std_line = ""
                     col_mark_line = ""
-                    for col_sum in col_sums:
-                        col_mark_line += f"{'*' if col_sum == max_col_sum else '':>5}"
+
+                    for i in range(8):
+                        c_sum = col_sums[i]
+                        c_std = statistics.stdev(col_history[i]) if len(col_history[i]) > 1 else 0  # ✅ 시간 기준
+
+                        # 마크: 변화 감지 + 최대값
+                        if any_col_change:
+                            if c_sum == max_col_sum:
+                                col_mark_line += f"{'X':>7}"
+                            elif col_flags[i]:
+                                col_mark_line += f"{'*':>7}"
+                            else:
+                                col_mark_line += " " * 7
+                        else:
+                            col_mark_line += " " * 7
+
+                        col_sum_line += f"{c_sum:7d}"
+                        col_std_line += f"{c_std:7.1f}"
+
                     f.write(col_mark_line + "\n\n")
+                    f.write(col_sum_line + "\n")
+                    f.write(col_std_line + "\n\n")
+
+                    # X 인덱스 히스토리 출력
+                    f.write("row_X_history: " + str(list(row_x_index_queue)) + "\n")
+                    f.write("col_X_history: " + str(list(col_x_index_queue)) + "\n\n")
 
             except Exception as e:
                 with open(raw_path, mode) as f:
