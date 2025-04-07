@@ -2,6 +2,7 @@
 from datetime import datetime
 import os
 import asyncio
+import struct
 
 # 상수 정의
 EXIT_SIGNAL = 20
@@ -137,7 +138,7 @@ class UnitspaceManager_new_new:
     def __init__(self):
         self.lock = asyncio.Lock()
         self.last_address = None
-        self.last_location = None
+        self.last_location = "ENTRY"
         self.last_received_time = 0
         self.active_count = 0
         
@@ -156,7 +157,7 @@ class UnitspaceManager_new_new:
         
         self.graph.add_edge("KITCHEN", "BEDROOM", 10)
         
-    async def unitspace_existence_estimation(self, location, device_type, address, service_name, char_name, received_time, unpacked_data_list):
+    async def unitspace_existence_estimation(self, location, device_type, address, service_name, char_name, received_time, unpacked_data_list, rawdata):
         if service_name != "inference":
             return
         
@@ -176,18 +177,35 @@ class UnitspaceManager_new_new:
                     if current_received_time - self.last_received_time >= 120:
                         print(f"Exceeded time out (120s) - send exit signal")
                         await current_device_obj.unitspace_existence_callback("strong_exit")
+                        current_device_obj.data_queue.put([ current_device_obj.config_dict['location'],
+                                                            current_device_obj.config_dict['type'],
+                                                            current_device_obj.config_dict['address'], 
+                                                            service_name, char_name, received_time, rawdata])
                     else:
                         # print(f"{location} Noise filtered or wandering under the sensor")
                         return
                 elif address != self.last_address:
                     print(f"From \"{self.last_location}\" to \"{location}\" moved")
                     await current_device_obj.unitspace_existence_callback("strong_enter")
+                    current_device_obj.data_queue.put([ current_device_obj.config_dict['location'],
+                                                        current_device_obj.config_dict['type'],
+                                                        current_device_obj.config_dict['address'], 
+                                                        service_name, char_name, received_time, rawdata])
                     
                     if self.last_address is not None:
                         last_device_obj = get_device_by_address(self.last_address)
                         if last_device_obj is not None:
                             await last_device_obj.unitspace_existence_callback("strong_exit")
-                            print("Exit signal sended")
+                            tmp_fmt = '<BBBfffffB20b'
+                            tmp_unpacked_data = struct.unpack(tmp_fmt, rawdata)
+                            tmp_unpacked_data_list = list(tmp_unpacked_data)
+                            tmp_unpacked_data_list[1] = 20
+                            repacked_data = struct.pack(tmp_fmt, *tmp_unpacked_data_list)
+                            last_device_obj.data_queue.put([last_device_obj.config_dict['location'],
+                                                            last_device_obj.config_dict['type'],
+                                                            last_device_obj.config_dict['address'], 
+                                                            service_name, char_name, received_time, repacked_data])
+                            print(f"Exit signal sended to {self.last_location}")
             elif received_signal == 20:
                 print(f"{location} - Active signal reacehed")
                 await current_device_obj.unitspace_existence_callback("strong_exit")

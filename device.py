@@ -148,12 +148,6 @@ class Device:
 
         elif service_name == 'inference':
             if char_name == 'rawdata':
-                self.check_room_status(data)
-                if not self.data_queue.full():
-                    self.data_queue.put([self.config_dict['location'], self.config_dict['type'],
-                                         self.config_dict['address'], service_name, char_name,
-                                         received_time, data])
-                # if not self.unitspace_queue.full():
                 fmt = '<BBBfffffB20b'
                 unpacked_data = struct.unpack(fmt, data)
                 unpacked_data_list = list(unpacked_data)
@@ -161,10 +155,15 @@ class Device:
                     # Unitspace management start
                     asyncio.create_task(unitspace_manager.unitspace_existence_estimation(self.config_dict['location'], self.config_dict['type'],
                                                 self.config_dict['address'], service_name, char_name,
-                                                received_time, unpacked_data_list))
-                    # self.unitspace_queue.put([self.config_dict['location'], self.config_dict['type'],
-                    #                           self.config_dict['address'], service_name, char_name,
-                    #                           received_time, unpacked_data_list])
+                                                received_time, unpacked_data_list, data))
+                else:
+                    self.check_room_status(data)
+                    if not self.data_queue.full():
+                        self.data_queue.put([self.config_dict['location'], self.config_dict['type'],
+                                            self.config_dict['address'], service_name, char_name,
+                                            received_time, data])
+                    # if not self.unitspace_queue.full():
+                
             elif char_name == 'predict':
                 print("WIP : mqtt service required for handling inference result")   
             elif char_name == 'debugstr':
@@ -492,8 +491,6 @@ class DeviceManager:
         
         if cmd == 'reset':
             await device_obj.reset_device()
-            await device_obj.ble_client.disconnect()
-            device_obj.is_connected = False
             return_msg = f"Reset DEAN {commands[1]}"
             return return_msg.encode()
 
