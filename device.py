@@ -14,7 +14,8 @@ import logging
 from dean_uuid import *
 from packet import *
 from unitspace_manager import UnitspaceManager
-from unitspace_manager_with_timestamp import UnitspaceManager_new
+# from unitspace_manager_with_timestamp import UnitspaceManager_new
+from unitspace_manager_with_timestamp import UnitspaceManager_new_new
 
 connected_devices = {}
 
@@ -24,8 +25,9 @@ def get_device_by_address(address):
 class DeviceError(Exception):
     pass
 
-unitspace_manager = UnitspaceManager()
+# unitspace_manager = UnitspaceManager()
 # unitspace_manager = UnitspaceManager_new()
+unitspace_manager = UnitspaceManager_new_new()
 
 class Device:
     sound_classlist = [

@@ -9,7 +9,6 @@ ENTER_SIGNAL = 10
 INACTIVITY_TIMEOUT = 30  # 마지막 신호 이후 강제 exit (초)
 NOISE_THRESHOLD = 15       # 같은 공간 내 신호 무시 기준 (초)
 
-last_address = None
 
 # 각 단위 공간(노드)를 표현하는 클래스
 class Node:
@@ -131,6 +130,74 @@ class CustomGraph:
         with open(os.path.join(path, filename), 'a') as f:
             f.write(header + "\n" + status + "\n")
 
+
+class UnitspaceManager_new_new:
+    ACTIVE = ENTER_SIGNAL
+    
+    def __init__(self):
+        self.lock = asyncio.Lock()
+        self.last_address = None
+        self.last_location = None
+        self.last_received_time = 0
+        self.active_count = 0
+        
+        self.graph = CustomGraph()
+        self.graph.add_edge("LIVING", "ENTRY", 10)
+        self.graph.add_edge("LIVING", "TOILET", 10)
+        self.graph.add_edge("LIVING", "KITCHEN", 10)
+        self.graph.add_edge("LIVING", "BEDROOM", 10)
+        
+        self.graph.add_edge("ENTRY", "TOILET", 10)
+        self.graph.add_edge("ETNRY", "KITCHEN", 10)
+        self.graph.add_edge("ENTRY", "BEDROOM", 10)
+        
+        self.graph.add_edge("TOILET", "KITCHEN", 10)
+        self.graph.add_edge("TOILET", "BEDROOM", 10)
+        
+        self.graph.add_edge("KITCHEN", "BEDROOM", 10)
+        
+    async def unitspace_existence_estimation(self, location, device_type, address, service_name, char_name, received_time, unpacked_data_list):
+        if service_name != "inference":
+            return
+        
+        async with self.lock:
+            from device import get_device_by_address
+            current_device_obj = get_device_by_address(address)
+            current_received_time = datetime.now().timestamp()
+            received_signal = unpacked_data_list[1]
+            graph = self.graph
+            
+            # Test code
+            if received_signal == 10:
+                if (self.last_address != None) or (self.last_location != None):
+                    # print(f"{location} - Active signal reacehed {self.last_location}")
+                    self.active_count += 1
+                if address == self.last_address:
+                    if current_received_time - self.last_received_time >= 120:
+                        print(f"Exceeded time out (120s) - send exit signal")
+                        await current_device_obj.unitspace_existence_callback("strong_exit")
+                    else:
+                        # print(f"{location} Noise filtered or wandering under the sensor")
+                        return
+                elif address != self.last_address:
+                    print(f"From \"{self.last_location}\" to \"{location}\" moved")
+                    await current_device_obj.unitspace_existence_callback("strong_enter")
+                    
+                    if self.last_address is not None:
+                        last_device_obj = get_device_by_address(self.last_address)
+                        if last_device_obj is not None:
+                            await last_device_obj.unitspace_existence_callback("strong_exit")
+                            print("Exit signal sended")
+            elif received_signal == 20:
+                print(f"{location} - Active signal reacehed")
+                await current_device_obj.unitspace_existence_callback("strong_exit")
+                
+            self.last_address = address
+            self.last_location = location
+            self.last_received_time = current_received_time
+            self.active_count = 0   # redundant value
+            
+        
 # 단위 공간 상태를 관리하는 메인 매니저 클래스
 class UnitspaceManager_new:
     ENTER = ENTER_SIGNAL
