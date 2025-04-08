@@ -174,13 +174,14 @@ class UnitspaceManager_new_new:
                     # print(f"{location} - Active signal reacehed {self.last_location}")
                     self.active_count += 1
                 if address == self.last_address:
-                    if current_received_time - self.last_received_time >= 120:
-                        print(f"Exceeded time out (120s) - send exit signal")
-                        await current_device_obj.unitspace_existence_callback("strong_exit")
-                        current_device_obj.data_queue.put([ current_device_obj.config_dict['location'],
-                                                            current_device_obj.config_dict['type'],
-                                                            current_device_obj.config_dict['address'], 
-                                                            service_name, char_name, received_time, rawdata])
+                    if current_received_time - self.last_received_time >= 5:
+                        # print(f"Exceeded time out (120s) - send exit signal")
+                        print("Same signal reacehd {location}")
+                        # await current_device_obj.unitspace_existence_callback("strong_exit")
+                        # current_device_obj.data_queue.put([ current_device_obj.config_dict['location'],
+                        #                                     current_device_obj.config_dict['type'],
+                        #                                     current_device_obj.config_dict['address'], 
+                        #                                     service_name, char_name, received_time, rawdata])
                     else:
                         # print(f"{location} Noise filtered or wandering under the sensor")
                         return
