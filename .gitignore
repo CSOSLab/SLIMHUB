@@ -3,7 +3,9 @@ __pycache__/
 Pipfile
 Pipfile.lock
 nohup.out
-programdata/logging.log
-programdata/logging copy.log
-programdata/config
+programdata/*
+!programdata/
+!programdata/polly
+!programdata/models/base*
+!programdata/models/*.npz
 slimhub-env/
