@@ -19,9 +19,7 @@ today_str = datetime.now().strftime('%Y-%m-%d')
 
 FILE1 = f'/home/rtlab/SLIMHUB/data/LIVING/DE&N/F3:7D:01:38:75:C1/inference/debugstr/{today_str}.txt'
 FILE2 = f'/home/rtlab/SLIMHUB/data/KITCHEN/DE&N/DC:1C:49:F9:A0:83/inference/debugstr/{today_str}.txt'
-FILE3 = f'/home/rtlab/SLIMHUB/data/ENTRY/DE&N/F3:07:B6:5C:BD:92/inference/rawdata/2025-03-28.txt'
-#FILE2 = f'/home/hmkang/SLIMHUB/data/KITCHEN/DE&N/E9:D4:F1:33:3D:BC/inference/debugstr/{today_str}.txt'
-#FILE3 = f'/home/hmkang/SLIMHUB/data/BEDROOM/DE&N/E2:E9:45:F9:91:71/inference/rawdata/{today_str}.txt'
+FILE3 = f'/home/rtlab/SLIMHUB/data/ENTRY/DE&N/F3:07:B6:5C:BD:92/inference/rawdata/{today_str}.txt'
 FILE4 = f'/home/rtlab/SLIMHUB/data/TOILET/DE&N/DB:3A:07:BB:C2:69/inference/rawdata/{today_str}.txt'
 #FILE5 = f'/home/hmkang/SLIMHUB/data/LIVING/DE&N/ED:5A:F2:AF:BF:65/inference/rawdata/{today_str}.txt'
 #FILE6 = '/home/hmkang/SLIMHUB/data/KITCHEN/DE&N/macaddress/inference/rawdata/2025-03-25_6.txt'

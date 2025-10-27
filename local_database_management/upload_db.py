@@ -23,7 +23,7 @@ REMOTE_DB = {
 
 fixed_mac = "2C:CF:67:C6:2C:F6"
 TABLE_NAME = 'rawdata_adl_chilgok'
-LAST_ID_FILE = '/home/rtlab/SLIMHUB/ad_rawcron/log_dir/last_uploaded_id.txt'
+LAST_ID_FILE = '/home/rtlab/SLIMHUB/local_database_management/log_dir/last_uploaded_id.txt'
 
 def get_last_uploaded_id():
     if not os.path.exists(LAST_ID_FILE):
