@@ -46,10 +46,13 @@ class Device:
     ]
 
     service_enable_default = {
+        'config': ['file'],
         'sound': ['model'],
         'grideye': ['prediction'],
         'inference': ['rawdata', 'predict', 'debugstr']
     }
+
+    file_chunk_size = 128
     model_chunk_size = 128
 
     def __init__(self, dev):
@@ -81,6 +84,11 @@ class Device:
         self.model_size = 0
         self.collecting_feature = False
 
+        self.file_path = ''
+        self.file_seq = 0
+        self.file_size = 0
+        self.sending_file = False
+
         self.user_in = False
         
         self.enable = Device.service_enable_default
@@ -110,8 +118,31 @@ class Device:
         service_name = dean_service_lookup[sender.service_uuid]
         char_name = dean_service_lookup[sender.uuid]
         received_time = time.time()
+
+        if service_name == 'config':
+            if char_name == 'file':
+                recv_packet = FilePacket.unpack(data)
+                if recv_packet.cmd == FILE_TRANSFER_CMD_START:
+                    if not self.sending_file:
+                        self.sending_file = True
+                        self.file_seq = 0
+                        asyncio.create_task(self.file_send_worker())
+                elif recv_packet.cmd == FILE_TRANSFER_CMD_DATA:
+                    recv_packet = FileAckPacket.unpack(data)
+                    self.file_seq = recv_packet.seq + 1
+                    asyncio.create_task(self.file_send_worker())
+                elif recv_packet.cmd == FILE_TRANSFER_CMD_END:
+                    logging.info('%s: File transfer completed', self.config_dict['address'])
+                    self.sending_file = False
+                    self.file_seq = 0
+                elif recv_packet.cmd == FILE_TRANSFER_CMD_FAIL:
+                    logging.info('%s: File transfer failed', self.config_dict['address'])
+                    self.sending_file = False
+                    self.file_seq = 0
+                elif recv_packet.cmd == FILE_TRANSFER_CMD_REMOVE:
+                    logging.info('%s: File removed', self.config_dict['address'])
         
-        if service_name == 'sound':
+        elif service_name == 'sound':
             if char_name == 'model':
                 recv_packet = ModelPacket.unpack(data)
                 if recv_packet.cmd == MODEL_UPDATE_CMD_START:
@@ -130,6 +161,8 @@ class Device:
                     logging.info('%s: Model update failed', self.config_dict['address'])
                     self.sending_model = False
                     self.model_seq = 0
+                elif recv_packet.cmd == MODEL_UPDATE_CMD_REMOVE:
+                    logging.info('%s: Model removed', self.config_dict['address'])
 
                 elif recv_packet.cmd == FEATURE_COLLECTION_CMD_START:
                     self.collecting_feature = True
@@ -320,8 +353,8 @@ class Device:
     async def init_services(self):
         try:
             for service in self.ble_client.services:
-                if service.uuid == DEAN_UUID_CONFIG_SERVICE:
-                    continue
+                # if service.uuid == DEAN_UUID_CONFIG_SERVICE:
+                #     continue
                 service_name = dean_service_lookup.get(service.uuid, None)
                 if service_name is not None:
                     await self.activate_service(service_name)
@@ -344,6 +377,41 @@ class Device:
         format_string = '<HBBBBBBBB'
         packed_data = struct.pack(format_string, year, month, day, hours, minutes, seconds, day_of_week, exact_time_256, adjust_reason)
         await self.ble_client.write_gatt_char(DEAN_UUID_CTS_CURRENT_TIME_CHAR, packed_data)
+
+    async def file_transfer_start(self, file_path, target_path):
+        self.file_path = file_path
+        with open(file_path, 'rb') as f:
+            self.file_size = len(f.read())
+        logging.info('%s: File transfer start', self.config_dict['address'])
+        send_packet = FileDataPacket(cmd=FILE_TRANSFER_CMD_START, seq=0, size=len(target_path), data=bytearray(target_path, 'utf-8'))
+        await self.ble_client.write_gatt_char(DEAN_UUID_CONFIG_FILE_TRANSFER_CHAR, send_packet.pack())
+
+    async def file_send_worker(self):
+        total_chunk = self.file_size // self.file_chunk_size + 1
+        if self.file_seq > total_chunk:
+            send_packet = FilePacket(cmd=FILE_TRANSFER_CMD_END)
+            for i in range(3):
+                await self.ble_client.write_gatt_char(DEAN_UUID_CONFIG_FILE_TRANSFER_CHAR, send_packet.pack())
+                await asyncio.sleep(1)
+                if self.sending_file == False:
+                    break
+            return
+        try:
+            with open(self.file_path, 'rb') as f:
+                file_data = f.read()
+            file_chunk = file_data[self.file_seq * self.file_chunk_size:(self.file_seq + 1) * self.file_chunk_size]
+            send_packet = FileDataPacket(cmd=FILE_TRANSFER_CMD_DATA, seq=self.file_seq, size=len(file_chunk), data=file_chunk)
+            if self.file_seq%1 == 0 or self.file_seq == total_chunk:
+                logging.info('%s: Sending file data %d/%d', self.config_dict['address'], self.file_seq, total_chunk)
+            await self.ble_client.write_gatt_char(DEAN_UUID_CONFIG_FILE_TRANSFER_CHAR, send_packet.pack())
+        except Exception as e:
+            logging.warning("File send error: %s", e)
+            self.sending_file = False
+
+    async def file_remove(self, target_path):
+        logging.info('%s: Remove', self.config_dict['address'])
+        send_packet = FileDataPacket(cmd=FILE_TRANSFER_CMD_REMOVE, seq=0, size=len(target_path), data=bytearray(target_path, 'utf-8'))
+        await self.ble_client.write_gatt_char(DEAN_UUID_CONFIG_FILE_TRANSFER_CHAR, send_packet.pack())
 
     async def model_update_start(self):
         if os.path.isfile(self.model_path):
@@ -559,7 +627,18 @@ class DeviceManager:
                 await device_obj.ble_client.write_gatt_char(DEAN_UUID_SOUND_MODEL_CHAR, send_packet.pack())
                 return "Feature collection ended".encode()
             else:
-                return "Argument 2 must be 'start' or 'end'".encode()        
+                return "Argument 2 must be 'start' or 'end'".encode()     
+
+        elif cmd == 'file':
+            file_path = commands[2]
+            target_path = commands[3]
+            if not os.path.isfile(file_path):
+                return f"File {file_path} does not exist".encode()
+            if device_obj.sending_file:
+                return f"{address} File transfer is in progress".encode()
+            else:
+                await device_obj.file_transfer_start(file_path, target_path)
+                return f"File transfer started for {file_path} to {target_path}".encode()   
         else:
             print("What? " + cmd + " " + str(type(cmd)))
             return b''

@@ -9,6 +9,7 @@ DEAN_UUID_BASE_RESET_CHAR =             '4eab0001-6bef-11ee-b962-10012002809a'
 DEAN_UUID_CONFIG_SERVICE =              '4eab0100-6bef-11ee-b962-10012002809a'
 DEAN_UUID_CONFIG_NAME_CHAR =            '4eab0102-6bef-11ee-b962-10012002809a'
 DEAN_UUID_CONFIG_LOCATION_CHAR =        '4eab0103-6bef-11ee-b962-10012002809a'
+DEAN_UUID_CONFIG_FILE_TRANSFER_CHAR =    '4eab0109-6bef-11ee-b962-10012002809a'
 
 # GridEye Service
 DEAN_UUID_GRIDEYE_SERVICE =             '4eab0200-6bef-11ee-b962-10012002809a'
@@ -64,7 +65,8 @@ dean_service_dict = {
     'config': {
         'service':          DEAN_UUID_CONFIG_SERVICE,
         'name':             DEAN_UUID_CONFIG_NAME_CHAR,
-        'location':         DEAN_UUID_CONFIG_LOCATION_CHAR
+        'location':         DEAN_UUID_CONFIG_LOCATION_CHAR,
+        'file':             DEAN_UUID_CONFIG_FILE_TRANSFER_CHAR
     },
     'grideye': {
         'service':          DEAN_UUID_GRIDEYE_SERVICE,
@@ -95,7 +97,7 @@ dean_service_dict = {
         'service':          DEAN_UUID_INFERENCE_SERVICE,
         'rawdata' :         DEAN_UUID_INFERENCE_RAWDATA_CHAR,
         'predict' :         DEAN_UUID_INFERENCE_PREDICT_CHAR,
-        'debugstr' :        DEAN_UUID_INFERENCE_DEBUG_STRING_CHAR
+        'debugstr' :        DEAN_UUID_INFERENCE_DEBUG_STRING_CHAR,
     }
 }
 
@@ -107,6 +109,7 @@ dean_service_lookup = {
     DEAN_UUID_CONFIG_SERVICE:               'config',
     DEAN_UUID_CONFIG_NAME_CHAR:             'name',
     DEAN_UUID_CONFIG_LOCATION_CHAR:         'location',
+    DEAN_UUID_CONFIG_FILE_TRANSFER_CHAR:    'file',
 
     DEAN_UUID_GRIDEYE_SERVICE:              'grideye',
     DEAN_UUID_GRIDEYE_PREDICTION_CHAR:      'prediction',

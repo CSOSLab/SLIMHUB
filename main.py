@@ -238,6 +238,8 @@ if __name__ == "__main__":
                         metavar=('address'))
     parser.add_argument('--model', nargs=2, help='sound model configuration',
                         metavar=('address', 'command'))
+    parser.add_argument('--file', nargs=3, help='file transfer to sd card',
+                        metavar=('address', 'file_path', 'save_path'))
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
@@ -276,5 +278,7 @@ if __name__ == "__main__":
         send_command('list', args_dict)
     if args.quit:
         send_command('quit', args_dict)
+    if args.file:
+        send_command('file', args_dict)
     if args.hubconfig:
         update_config(args.hubconfig[0], args.hubconfig[1])
