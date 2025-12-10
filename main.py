@@ -121,7 +121,7 @@ async def main_worker(server):
         for dev in target_devices:
             current_device = device.get_device_by_address(dev.address)
             if current_device is None:
-                if dev.name == "DE&N":
+                if dev.name == "DE&N_RELAY":
                     current_device = device.Device(dev)
                     # current_device.manager_queue = manager.get_queue()  # remains for legacy usage if needed
                     current_device.sound_queue = sound_process.get_queue()

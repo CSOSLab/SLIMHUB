@@ -187,7 +187,7 @@ class UnitspaceManager_new_new:
                         return
                 elif address != self.last_address:
                     print(f"From \"{self.last_location}\" to \"{location}\" moved")
-                    await current_device_obj.unitspace_existence_callback("strong_enter")
+                    await current_device_obj.unitspace_existence_callback(address, "strong_enter")
                     current_device_obj.data_queue.put([ current_device_obj.config_dict['location'],
                                                         current_device_obj.config_dict['type'],
                                                         current_device_obj.config_dict['address'], 
@@ -196,7 +196,7 @@ class UnitspaceManager_new_new:
                     if self.last_address is not None:
                         last_device_obj = get_device_by_address(self.last_address)
                         if last_device_obj is not None:
-                            await last_device_obj.unitspace_existence_callback("strong_exit")
+                            await last_device_obj.unitspace_existence_callback(self.last_address, "strong_exit")
                             tmp_fmt = '<BBBfffffB20b'
                             tmp_unpacked_data = struct.unpack(tmp_fmt, rawdata)
                             tmp_unpacked_data_list = list(tmp_unpacked_data)
@@ -209,7 +209,7 @@ class UnitspaceManager_new_new:
                             print(f"Exit signal sended to {self.last_location}")
             elif received_signal == 20:
                 print(f"{location} - Active signal reacehed")
-                await current_device_obj.unitspace_existence_callback("strong_exit")
+                await current_device_obj.unitspace_existence_callback(address, "strong_exit")
                 
             self.last_address = address
             self.last_location = location
@@ -257,7 +257,7 @@ class UnitspaceManager_new:
                         self.graph.deactivate_node(location)
                         self.graph.record_activation_time(location, current_time)
                         device_obj = get_device_by_address(address)
-                        asyncio.create_task(device_obj.unitspace_existence_callback("strong_exit"))
+                        asyncio.create_task(device_obj.unitspace_existence_callback(address, "strong_exit"))
                         addresses_to_remove.append(address)
             for address in addresses_to_remove:
                 del self.graph.connected_devices_unitspace_process[address]
@@ -294,7 +294,7 @@ class UnitspaceManager_new:
             graph.connected_devices_unitspace_process[address] = (location, received_time, True)
             graph.set_active_node(location, force_activate=True)
             graph.record_activation_time(location, received_time)
-            await device_obj.unitspace_existence_callback("strong_enter")
+            await device_obj.unitspace_existence_callback(address, "strong_enter")
             return
 
         prev_location, last_time, state = graph.connected_devices_unitspace_process[address]
@@ -313,9 +313,9 @@ class UnitspaceManager_new:
             graph.add_pending_moves(prev_location, received_time)
             # await device_obj.unitspace_existence_callback("strong_exit")
             if not address == last_address:
-                await device_obj.unitspace_existence_callback("weak_enter")
+                await device_obj.unitspace_existence_callback(address, "weak_enter")
             last_device_obj = get_device_by_address(last_address)
-            await last_device_obj.unitspace_existence_callback("strong_exit")
+            await last_device_obj.unitspace_existence_callback(last_address, "strong_exit")
             self.update_graph_state(address, prev_location, received_time)
             last_address = address
             return
@@ -329,9 +329,9 @@ class UnitspaceManager_new:
                 graph.record_activation_time(location, received_time)
                 graph.connected_devices_unitspace_process[address] = (location, received_time, True)
                 if not address == last_address:
-                    await device_obj.unitspace_existence_callback("weak_enter")         ## must be fixed later!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                    await device_obj.unitspace_existence_callback(address, "weak_enter")         ## must be fixed later!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 last_device_obj = get_device_by_address(last_address)
-                await last_device_obj.unitspace_existence_callback("strong_exit")
+                await last_device_obj.unitspace_existence_callback(last_address, "strong_exit")
                 self.update_graph_state(address, location, received_time)
                 last_address = address
                 return
@@ -352,9 +352,9 @@ class UnitspaceManager_new:
                     graph.connected_devices_unitspace_process[address] = (location, received_time, True)
                     graph.clear_pending_moves()
                     if not address == last_address:
-                        await device_obj.unitspace_existence_callback("strong_enter")
+                        await device_obj.unitspace_existence_callback(address, "strong_enter")
                     last_device_obj = get_device_by_address(last_address)
-                    await last_device_obj.unitspace_existence_callback("strong_exit")
+                    await last_device_obj.unitspace_existence_callback(last_address, "strong_exit")
                 else:
                     print(f"[TIMEOUT] Move to {location} exceeded timeout ({elapsed}s).")
                     graph.set_active_node(location, force_activate=True)
@@ -362,9 +362,9 @@ class UnitspaceManager_new:
                     graph.connected_devices_unitspace_process[address] = (location, received_time, True)
                     graph.clear_pending_moves()
                     if not address == last_address:
-                        await device_obj.unitspace_existence_callback("weak_enter")
+                        await device_obj.unitspace_existence_callback(address, "weak_enter")
                     last_device_obj = get_device_by_address(last_address)
-                    await last_device_obj.unitspace_existence_callback("strong_exit")
+                    await last_device_obj.unitspace_existence_callback(last_address, "strong_exit")
                 self.update_graph_state(address, location, received_time)
                 last_address = address
             else:
@@ -375,9 +375,9 @@ class UnitspaceManager_new:
                 graph.connected_devices_unitspace_process[address] = (location, received_time, True)
                 graph.clear_pending_moves()
                 if not address == last_address:
-                    await device_obj.unitspace_existence_callback("weak_enter")
+                    await device_obj.unitspace_existence_callback(address, "weak_enter")
                 last_device_obj = get_device_by_address(last_address)
-                await last_device_obj.unitspace_existence_callback("strong_exit")
+                await last_device_obj.unitspace_existence_callback(last_address, "strong_exit")
                 self.update_graph_state(address, location, received_time)
                 last_address = address
         # print(f"Current input : {address}, Last input : {last_address}")

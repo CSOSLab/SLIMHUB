@@ -254,7 +254,7 @@ class UnitspaceManager():
                 #             write_command = ['internal_processing', str(address), "default_action"]
                 #             print(f"[New code] Inactive unitspace {address}: received signal {received_signal}, sending default_action")
 
-                await device_obj.unitspace_existence_callback(write_command[2])
+                await device_obj.unitspace_existence_callback(address, write_command[2])
 
                 # # [New code] 명령 전송 (IPC)
                 # reply_queue = self.reply_manager.Queue()  # 올바른 reply_manager 사용
