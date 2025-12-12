@@ -639,7 +639,7 @@ class Device:
             debug_data = (10, 20, 30, 40)
             format_string = '<BBBB'
             debug_packed_data = struct.pack(format_string, *debug_data)
-            await self._write_with_target(DEAN_UUID_GRIDEYE_PREDICTION_CHAR, dean_mac, debug_packed_data)
+            await self._write_with_target(DEAN_UUID_INFERENCE_RAWDATA_CHAR, dean_mac, debug_packed_data)
             # logging.info("unitspace existence simulation end")
         except Exception as e:
             logging.warning(e)
@@ -652,7 +652,7 @@ class Device:
             byte_string = command_string.encode("utf-8")
             packed_validity_packet = struct.pack(f"{len(byte_string)}s", byte_string)
             
-            await self._write_with_target(DEAN_UUID_GRIDEYE_PREDICTION_CHAR, dean_mac, packed_validity_packet)
+            await self._write_with_target(DEAN_UUID_INFERENCE_RAWDATA_CHAR, dean_mac, packed_validity_packet)
             # logging.info("unitspace existence estimation end")
         except Exception as e:
             logging.warning(e)
