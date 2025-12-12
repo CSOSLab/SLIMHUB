@@ -724,6 +724,8 @@ class DeviceManager:
         entry = known_deans.get(identifier)
         if entry is None:
             return None, None, f"{identifier} is not registered"
+        if not entry.connected:
+            return None, entry, f"{identifier} is not connected"
         device_obj = get_device_by_address(entry.mac)
         if device_obj is None or not device_obj.is_connected:
             return None, entry, f"{identifier} is not connected"
@@ -780,6 +782,7 @@ class DeviceManager:
             else:
                 return "Argument 2 must be 'enable', 'disable', 'activate all', 'deactivate all'".encode()
         elif cmd == 'list':
+            known_deans.refresh_connection_states(30)
             entries = list(known_deans.iter_entries())
             if entries:
                 return_msg = f"{'Dean MAC':<20}{'Relay':<20}{'Type':<10}{'Location':<15}{'Connected':<10}\n"

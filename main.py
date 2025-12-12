@@ -24,6 +24,7 @@ from dean_uuid import *
 
 host = 'localhost'
 port = 6604
+DEAN_STATUS_TIMEOUT = 30
 
 sound_process = SoundProcess()
 data_process = DataProcess()
@@ -112,6 +113,8 @@ async def main_worker(server):
             server.close()
             await server.wait_closed()  # MODIFIED: wait for server to fully close
             return
+
+        device.known_deans.refresh_connection_states(DEAN_STATUS_TIMEOUT)
 
         target_devices = await scan()
         if target_devices is None:

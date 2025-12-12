@@ -156,6 +156,17 @@ class UnitspaceManager_new_new:
         self.graph.add_edge("TOILET", "BEDROOM", 10)
         
         self.graph.add_edge("KITCHEN", "BEDROOM", 10)
+
+    async def _send_unitspace_command(self, device_obj, target_address, command_string):
+        if target_address is None:
+            return
+        if device_obj is None:
+            from device import get_device_by_address
+            device_obj = get_device_by_address(target_address)
+        if device_obj is None:
+            print(f"[WARN] unitspace command '{command_string}' skipped for {target_address}: device not available")
+            return
+        await device_obj.unitspace_existence_callback(target_address, command_string)
         
     async def unitspace_existence_estimation(self, location, device_type, address, service_name, char_name, received_time, unpacked_data_list, rawdata):
         if service_name != "inference":
@@ -164,6 +175,9 @@ class UnitspaceManager_new_new:
         async with self.lock:
             from device import get_device_by_address
             current_device_obj = get_device_by_address(address)
+            if current_device_obj is None:
+                print(f"[WARN] Unable to resolve device object for {address}")
+                return
             current_received_time = datetime.now().timestamp()
             received_signal = unpacked_data_list[1]
             graph = self.graph
@@ -187,7 +201,7 @@ class UnitspaceManager_new_new:
                         return
                 elif address != self.last_address:
                     print(f"From \"{self.last_location}\" to \"{location}\" moved")
-                    await current_device_obj.unitspace_existence_callback(address, "strong_enter")
+                    await self._send_unitspace_command(current_device_obj, address, "strong_enter")
                     current_device_obj.data_queue.put([ current_device_obj.config_dict['location'],
                                                         current_device_obj.config_dict['type'],
                                                         current_device_obj.config_dict['address'], 
@@ -195,21 +209,21 @@ class UnitspaceManager_new_new:
                     
                     if self.last_address is not None:
                         last_device_obj = get_device_by_address(self.last_address)
+                        tmp_fmt = '<BBBfffffB20b'
+                        tmp_unpacked_data = struct.unpack(tmp_fmt, rawdata)
+                        tmp_unpacked_data_list = list(tmp_unpacked_data)
+                        tmp_unpacked_data_list[1] = 20
+                        repacked_data = struct.pack(tmp_fmt, *tmp_unpacked_data_list)
+                        await self._send_unitspace_command(last_device_obj, self.last_address, "strong_exit")
                         if last_device_obj is not None:
-                            await last_device_obj.unitspace_existence_callback(self.last_address, "strong_exit")
-                            tmp_fmt = '<BBBfffffB20b'
-                            tmp_unpacked_data = struct.unpack(tmp_fmt, rawdata)
-                            tmp_unpacked_data_list = list(tmp_unpacked_data)
-                            tmp_unpacked_data_list[1] = 20
-                            repacked_data = struct.pack(tmp_fmt, *tmp_unpacked_data_list)
                             last_device_obj.data_queue.put([last_device_obj.config_dict['location'],
                                                             last_device_obj.config_dict['type'],
                                                             last_device_obj.config_dict['address'], 
                                                             service_name, char_name, received_time, repacked_data])
-                            print(f"Exit signal sended to {self.last_location}")
+                        print(f"Exit signal sended to {self.last_location}")
             elif received_signal == 20:
                 print(f"{location} - Active signal reacehed")
-                await current_device_obj.unitspace_existence_callback(address, "strong_exit")
+                await self._send_unitspace_command(current_device_obj, address, "strong_exit")
                 
             self.last_address = address
             self.last_location = location

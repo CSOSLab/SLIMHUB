@@ -108,6 +108,14 @@ class KnownDeanTable:
         mac_bytes = mac_str_to_bytes(mac)
         return mac_bytes + payload
 
+    def refresh_connection_states(self, timeout: float):
+        now = time.time()
+        for entry in self._entries.values():
+            if entry.last_seen == 0:
+                continue
+            is_active = (now - entry.last_seen) <= timeout
+            entry.connected = is_active
+
     def get(self, mac: str) -> Optional[KnownDean]:
         return self._get_entry(mac)
 
@@ -122,4 +130,3 @@ class KnownDeanTable:
         for entry in self._entries.values():
             if entry.relay_address == relay_address:
                 entry.connected = False
-
