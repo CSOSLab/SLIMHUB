@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 from dean_uuid import *
 from packet import *
-from dean_identity import KnownDeanTable, try_normalize_mac_string
+from dean_identity import KnownDeanTable, try_normalize_mac_string, normalize_mac_string
 from unitspace_manager import UnitspaceManager
 from unitspace_manager_with_timestamp import UnitspaceManager_new_new
 
@@ -29,6 +29,47 @@ def get_device_by_address(address):
     if entry is None:
         return None
     return connected_devices.get(entry.relay_address, None)
+
+
+def load_known_deans_from_disk():
+    config_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "programdata", "config")
+    if not os.path.isdir(config_path):
+        return 0
+    loaded = 0
+    for filename in os.listdir(config_path):
+        if not filename.endswith(".json"):
+            continue
+        file_path = os.path.join(config_path, filename)
+        try:
+            with open(file_path) as f:
+                json_data = json.load(f)
+        except Exception:
+            continue
+        dean_mac = json_data.get("address")
+        canonical = try_normalize_mac_string(dean_mac)
+        if canonical is None:
+            continue
+        if json_data.get("type") in {"DE&N_RELAY", "slimhub"}:
+            continue
+
+        # Migrate legacy slug filenames (AABBCCDDEEFF.json) to colon filenames (AA:BB:CC:DD:EE:FF.json).
+        colon_path = os.path.join(config_path, f"{canonical}.json")
+        if file_path != colon_path and not os.path.exists(colon_path):
+            try:
+                with open(colon_path, "w") as f:
+                    json.dump(json_data, f, indent=4)
+                try:
+                    os.remove(file_path)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        entry = known_deans.ensure(canonical, device_type=json_data.get("type", ""))
+        entry.name = json_data.get("name", entry.name)
+        entry.location = json_data.get("location", entry.location)
+        loaded += 1
+    return loaded
 
 class DeviceError(Exception):
     pass
@@ -130,8 +171,40 @@ class Device:
         return config_path
 
     def _config_path(self, dean_mac: str):
-        slug = _mac_slug(dean_mac)
-        return os.path.join(self._config_dir(), f"{slug}.json")
+        canonical = _canonical_mac(dean_mac)
+        return os.path.join(self._config_dir(), f"{canonical}.json")
+
+    def _config_paths(self, dean_mac: str):
+        canonical = _canonical_mac(dean_mac)
+        human = os.path.join(self._config_dir(), f"{canonical}.json")
+        slug = os.path.join(self._config_dir(), f"{_mac_slug(canonical)}.json")
+        return human, slug
+
+    def _read_dean_config_file(self, dean_mac: str):
+        for path in self._config_paths(dean_mac):
+            if os.path.isfile(path):
+                try:
+                    with open(path) as f:
+                        return json.load(f)
+                except Exception:
+                    return None
+        return None
+
+    def _write_dean_config_file(self, dean_mac: str, payload: dict):
+        human, slug = self._config_paths(dean_mac)
+        with open(human, 'w') as save:
+            json.dump(payload, save, indent=4)
+        # Backward-compat read supports legacy slug filenames, but we only write the
+        # colon-form filename going forward to keep config directory human-readable.
+
+    def _hydrate_dean_entry_from_disk(self, entry) -> bool:
+        json_data = self._read_dean_config_file(entry.mac)
+        if not json_data:
+            return False
+        entry.name = entry.name or json_data.get("name", "")
+        entry.location = entry.location or json_data.get("location", "")
+        entry.device_type = entry.device_type or json_data.get("type", "")
+        return True
 
     def _model_path_for(self, dean_mac: str):
         model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "programdata", "models")
@@ -213,16 +286,26 @@ class Device:
         char_name = dean_service_lookup[sender.uuid]
         received_time = time.time()
 
+        # Only these characteristics are expected to be MAC-prefixed multiplexed payloads.
+        if not (
+            (service_name == 'config' and char_name == 'file') or
+            (service_name == 'sound' and char_name == 'model') or
+            (service_name == 'inference' and char_name in {'rawdata', 'debugstr', 'predict'})
+        ):
+            return
+
         try:
             dean_entry, payload = known_deans.parse_upstream(
                 data,
                 self.config_dict['address'],
-                self.config_dict['type'],
+                "DE&N",
                 self.config_dict['location']
             )
         except ValueError:
             logging.warning("Received %s/%s packet without MAC prefix", service_name, char_name)
             return
+
+        self._hydrate_dean_entry_from_disk(dean_entry)
 
         dean_mac = dean_entry.mac
         location = dean_entry.location or self.config_dict['location']
@@ -379,12 +462,10 @@ class Device:
             return False
 
         entry = self._ensure_identity(dean_mac)
-        file_path = self._config_path(entry.mac)
-        if os.path.isfile(file_path):
-            with open(file_path) as f:
-                json_data = json.load(f)
-                entry.name = json_data.get('name', entry.name)
-                entry.location = json_data.get('location', entry.location)
+        json_data = self._read_dean_config_file(entry.mac)
+        if json_data:
+            entry.name = json_data.get('name', entry.name)
+            entry.location = json_data.get('location', entry.location)
             try:
                 await self._write_with_target(DEAN_UUID_CONFIG_NAME_CHAR, entry.mac, entry.name or '')
                 await self._write_with_target(DEAN_UUID_CONFIG_LOCATION_CHAR, entry.mac, entry.location or '')
@@ -408,8 +489,7 @@ class Device:
             'name': entry.name,
             'location': entry.location,
         }
-        with open(self._config_path(entry.mac), 'w') as save:
-            json.dump(payload, save, indent=4)
+        self._write_dean_config_file(entry.mac, payload)
 
     async def reset_device(self, dean_mac):
         char_uuid = dean_service_dict['base']['reset']
@@ -783,7 +863,7 @@ class DeviceManager:
                 return "Argument 2 must be 'enable', 'disable', 'activate all', 'deactivate all'".encode()
         elif cmd == 'list':
             known_deans.refresh_connection_states(30)
-            entries = list(known_deans.iter_entries())
+            entries = [e for e in known_deans.iter_entries() if e.connected]
             if entries:
                 return_msg = f"{'Dean MAC':<20}{'Relay':<20}{'Type':<10}{'Location':<15}{'Connected':<10}\n"
                 for entry in entries:

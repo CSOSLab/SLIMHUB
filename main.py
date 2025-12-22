@@ -124,7 +124,7 @@ async def main_worker(server):
         for dev in target_devices:
             current_device = device.get_device_by_address(dev.address)
             if current_device is None:
-                if dev.name == "DE&N_RELAY":
+                if dev.name == "DE&N":
                     current_device = device.Device(dev)
                     # current_device.manager_queue = manager.get_queue()  # remains for legacy usage if needed
                     current_device.sound_queue = sound_process.get_queue()
@@ -257,6 +257,7 @@ if __name__ == "__main__":
 
         # Execute configuration loading
         load_or_create_config()
+        device.load_known_deans_from_disk()
         
         sound_process.start()
         data_process.start()
