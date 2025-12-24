@@ -24,7 +24,6 @@ from dean_uuid import *
 
 host = 'localhost'
 port = 6604
-DEAN_STATUS_TIMEOUT = 30
 
 sound_process = SoundProcess()
 data_process = DataProcess()
@@ -100,7 +99,7 @@ async def main_worker(server):
         try:
             devices = await BleakScanner.discover(return_adv=True, timeout=2)
         except Exception as e:
-            logging.warning(e)
+            logging.warning("BLE scan failed: %s", e)
             return None
         else:
             for dev in devices.values():
@@ -114,7 +113,7 @@ async def main_worker(server):
             await server.wait_closed()  # MODIFIED: wait for server to fully close
             return
 
-        device.known_deans.refresh_connection_states(DEAN_STATUS_TIMEOUT)
+        device.known_deans.refresh_connection_states(device.DEAN_STATUS_TIMEOUT_SECONDS)
 
         target_devices = await scan()
         if target_devices is None:
@@ -194,6 +193,7 @@ async def shutdown_all_tasks():
 
 async def async_main():
     server = await asyncio.start_server(cli_handler, host, port)
+    status_task = asyncio.create_task(device.connection_status_manager.run(quit_event))
     main_task = asyncio.create_task(main_worker(server))
     try: 
         async with server:
@@ -201,6 +201,8 @@ async def async_main():
     except asyncio.CancelledError:
         pass
     finally:
+        quit_event.set()
+        await asyncio.gather(status_task, return_exceptions=True)
         await main_task
         
         from device import connected_devices

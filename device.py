@@ -14,12 +14,14 @@ from dataclasses import dataclass
 
 from dean_uuid import *
 from packet import *
-from dean_identity import KnownDeanTable, try_normalize_mac_string, normalize_mac_string
+from dean_identity import KnownDeanTable, try_normalize_mac_string
 from unitspace_manager import UnitspaceManager
 from unitspace_manager_with_timestamp import UnitspaceManager_new_new
 
 connected_devices = {}
 known_deans = KnownDeanTable()
+
+DEAN_STATUS_TIMEOUT_SECONDS = 120
 
 def get_device_by_address(address):
     device = connected_devices.get(address, None)
@@ -70,6 +72,28 @@ def load_known_deans_from_disk():
         entry.location = json_data.get("location", entry.location)
         loaded += 1
     return loaded
+
+
+class ConnectionStatusManager:
+    def __init__(self, dean_table: KnownDeanTable, timeout_seconds: float = DEAN_STATUS_TIMEOUT_SECONDS, refresh_interval_seconds: float = 5.0):
+        self._dean_table = dean_table
+        self._timeout_seconds = float(timeout_seconds)
+        self._refresh_interval_seconds = float(refresh_interval_seconds)
+
+    @property
+    def timeout_seconds(self) -> float:
+        return self._timeout_seconds
+
+    async def run(self, stop_event: asyncio.Event):
+        while not stop_event.is_set():
+            try:
+                self._dean_table.refresh_connection_states(self._timeout_seconds)
+            except Exception as e:
+                logging.warning("ConnectionStatusManager refresh failed: %s", e)
+            await asyncio.sleep(self._refresh_interval_seconds)
+
+
+connection_status_manager = ConnectionStatusManager(known_deans)
 
 class DeviceError(Exception):
     pass
@@ -129,6 +153,9 @@ class Device:
 
     file_chunk_size = 128
     model_chunk_size = 128
+    gatt_min_gap_seconds = 0.03
+    config_write_gap_seconds = 0.50
+    heartbeat_config_reapply_cooldown_seconds = 60.0
 
     def __init__(self, dev):
         # Update connected device dictionary
@@ -161,6 +188,15 @@ class Device:
         self.user_in = False
         
         self.enable = Device.service_enable_default
+
+        # Heartbeat-driven config reapply (name/location) for downstream DEAN nodes.
+        self._config_applied = set()
+        self._config_apply_inflight = set()
+        self._config_apply_last_attempt = {}
+
+        # Serialize GATT ops to avoid BlueZ "Unlikely Error" from overlapping operations.
+        self._gatt_lock = asyncio.Lock()
+        self._next_gatt_ok_at = 0.0
     
     def __repr__(self):
         return f"{self.__class__.__name__}: {self.config_dict['address']}, {self.config_dict['type']}, {self.config_dict['name']}, {self.config_dict['location']}"
@@ -206,6 +242,74 @@ class Device:
         entry.device_type = entry.device_type or json_data.get("type", "")
         return True
 
+    def _is_heartbeat_rawdata_packet(self, payload: bytes) -> bool:
+        num_sound_labels = len(self.sound_classlist)
+        expected_len = 24 + num_sound_labels
+        if len(payload) < expected_len:
+            return False
+        fmt = '<BBBfffff' + 'B' + str(num_sound_labels) + 'b'
+        try:
+            unpacked = struct.unpack(fmt, payload[:expected_len])
+        except struct.error:
+            return False
+        grideye, direction, _env = unpacked[:3]
+        temp, humid, iaq, eco2, bvoc = unpacked[3:8]
+        sound_flag = unpacked[8]
+        sound_logits = unpacked[9:]
+        if grideye != 0 or direction != 0 or sound_flag != 0:
+            return False
+        if any(abs(v) > 1e-6 for v in (temp, humid, iaq, eco2, bvoc)):
+            return False
+        return all(v == -128 for v in sound_logits)
+
+    def _maybe_apply_dean_config_on_heartbeat(self, dean_entry, payload: bytes):
+        if not self._is_heartbeat_rawdata_packet(payload):
+            return
+        canonical = try_normalize_mac_string(dean_entry.mac)
+        if canonical is None:
+            return
+        if canonical in self._config_apply_inflight:
+            return
+        last = self._config_apply_last_attempt.get(canonical, 0.0)
+        now = time.time()
+        if now - last < self.heartbeat_config_reapply_cooldown_seconds:
+            return
+        json_data = self._read_dean_config_file(canonical) or {}
+
+        dean_entry.name = json_data.get("name", dean_entry.name)
+        dean_entry.location = json_data.get("location", dean_entry.location)
+        dean_entry.device_type = json_data.get("type", dean_entry.device_type)
+        if not dean_entry.location:
+            dean_entry.location = self.config_dict.get("location", "")
+
+        payload_to_save = {
+            "address": dean_entry.mac,
+            "type": dean_entry.device_type,
+            "name": dean_entry.name,
+            "location": dean_entry.location,
+        }
+        if any(json_data.get(k) != payload_to_save.get(k) for k in payload_to_save):
+            try:
+                self._write_dean_config_file(dean_entry.mac, payload_to_save)
+            except Exception as e:
+                logging.warning("Failed to persist downstream config for %s: %s", dean_entry.mac, e)
+
+        self._config_apply_last_attempt[canonical] = now
+        self._config_apply_inflight.add(canonical)
+
+        async def _apply():
+            try:
+                ok = await self.load_config(canonical)
+                if ok:
+                    self._config_applied.add(canonical)
+                    logging.info("%s: downstream config reapplied on heartbeat", canonical)
+            except Exception as e:
+                logging.warning("Config apply failed for %s: %s", canonical, e)
+            finally:
+                self._config_apply_inflight.discard(canonical)
+
+        asyncio.create_task(_apply())
+
     def _model_path_for(self, dean_mac: str):
         model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "programdata", "models")
         os.makedirs(model_dir, exist_ok=True)
@@ -225,11 +329,48 @@ class Device:
             return bytes([payload])
         raise DeviceError(f"Unsupported payload type {type(payload)}")
 
-    def _write_with_target(self, char_uuid, target_mac: str, payload):
+    async def _gatt_run(self, op_label: str, op_coro_factory, *, post_gap_seconds: float = 0.0):
+        async with self._gatt_lock:
+            now = time.monotonic()
+            if now < self._next_gatt_ok_at:
+                await asyncio.sleep(self._next_gatt_ok_at - now)
+            try:
+                return await op_coro_factory()
+            except Exception as e:
+                raise DeviceError(f"GATT {op_label} failed: {e}") from e
+            finally:
+                self._next_gatt_ok_at = time.monotonic() + self.gatt_min_gap_seconds + float(post_gap_seconds)
+
+    async def _gatt_write(self, char_uuid, payload: bytes, *, response: bool = False, post_gap_seconds: float = 0.0, label: str = "write"):
+        async def _op():
+            return await self.ble_client.write_gatt_char(char_uuid, payload, response=response)
+
+        return await self._gatt_run(label, _op, post_gap_seconds=post_gap_seconds)
+
+    async def _gatt_read(self, char_uuid, *, label: str = "read"):
+        async def _op():
+            return await self.ble_client.read_gatt_char(char_uuid)
+
+        return await self._gatt_run(label, _op)
+
+    async def _gatt_start_notify(self, char_uuid, callback, *, label: str = "start_notify"):
+        async def _op():
+            return await self.ble_client.start_notify(char_uuid, callback)
+
+        return await self._gatt_run(label, _op)
+
+    async def _gatt_stop_notify(self, char_uuid, *, label: str = "stop_notify"):
+        async def _op():
+            return await self.ble_client.stop_notify(char_uuid)
+
+        return await self._gatt_run(label, _op)
+
+    async def _write_with_target(self, char_uuid, target_mac: str, payload):
         canonical_mac = _canonical_mac(target_mac)
         payload_bytes = self._payload_to_bytes(payload)
         prefixed_payload = known_deans.build_downstream(canonical_mac, payload_bytes)
-        return self.ble_client.write_gatt_char(char_uuid, prefixed_payload)
+        post_gap = self.config_write_gap_seconds if char_uuid in {DEAN_UUID_CONFIG_NAME_CHAR, DEAN_UUID_CONFIG_LOCATION_CHAR} else 0.0
+        return await self._gatt_write(char_uuid, prefixed_payload, post_gap_seconds=post_gap, label=f"write_target({canonical_mac})")
 
     def _ensure_identity(self, dean_mac: str):
         return known_deans.ensure(dean_mac, relay_address=self.config_dict['address'], device_type=self.config_dict['type'])
@@ -308,6 +449,13 @@ class Device:
         self._hydrate_dean_entry_from_disk(dean_entry)
 
         dean_mac = dean_entry.mac
+        dean_entry.last_seen = received_time
+        dean_entry.last_packet = f"{service_name}/{char_name}"
+        dean_entry.last_packet_is_heartbeat = False
+        if service_name == 'inference' and char_name == 'rawdata':
+            dean_entry.last_packet_is_heartbeat = self._is_heartbeat_rawdata_packet(payload)
+            self._maybe_apply_dean_config_on_heartbeat(dean_entry, payload)
+
         location = dean_entry.location or self.config_dict['location']
         device_type = dean_entry.device_type or self.config_dict['type']
 
@@ -429,6 +577,7 @@ class Device:
 
     async def config_device(self, dean_mac, target, data):
         entry = self._ensure_identity(dean_mac)
+        self._hydrate_dean_entry_from_disk(entry)
         if target == 'name':
             entry.name = data
         elif target == 'location':
@@ -440,6 +589,7 @@ class Device:
         char_uuid = dean_service_dict['config'][target]
         self.save_dean_config(entry)
         await self._write_with_target(char_uuid, entry.mac, data)
+        self._config_applied.add(entry.mac)
 
     async def load_config(self, dean_mac=None):
         if dean_mac is None:
@@ -451,13 +601,21 @@ class Device:
                     self.config_dict['name'] = json_data['name']
                     self.config_dict['location'] = json_data['location']
                 try:
-                    await self.ble_client.write_gatt_char(DEAN_UUID_CONFIG_NAME_CHAR,
-                                                          bytearray(self.config_dict['name'], 'utf-8'))
-                    await self.ble_client.write_gatt_char(DEAN_UUID_CONFIG_LOCATION_CHAR,
-                                                          bytearray(self.config_dict['location'], 'utf-8'))
+                    await self._gatt_write(
+                        DEAN_UUID_CONFIG_NAME_CHAR,
+                        bytearray(self.config_dict['name'], 'utf-8'),
+                        post_gap_seconds=self.config_write_gap_seconds,
+                        label="write_config_name",
+                    )
+                    await self._gatt_write(
+                        DEAN_UUID_CONFIG_LOCATION_CHAR,
+                        bytearray(self.config_dict['location'], 'utf-8'),
+                        post_gap_seconds=self.config_write_gap_seconds,
+                        label="write_config_location",
+                    )
                     return True
                 except Exception as e:
-                    logging.warning(e)
+                    logging.warning("%s: load_config(self) failed: %s", self.config_dict.get("address"), e)
                     return False
             return False
 
@@ -469,9 +627,10 @@ class Device:
             try:
                 await self._write_with_target(DEAN_UUID_CONFIG_NAME_CHAR, entry.mac, entry.name or '')
                 await self._write_with_target(DEAN_UUID_CONFIG_LOCATION_CHAR, entry.mac, entry.location or '')
+                self._config_applied.add(entry.mac)
                 return True
             except Exception as e:
-                logging.warning(e)
+                logging.warning("%s: load_config(%s) failed: %s", self.config_dict.get("address"), entry.mac, e)
                 return False
         return False
     
@@ -502,7 +661,7 @@ class Device:
             char_uuid = char_dict.get(char_name, None)
             if char_uuid is not None:
                 try:
-                    await self.ble_client.start_notify(char_uuid, self._ble_notify_callback)
+                    await self._gatt_start_notify(char_uuid, self._ble_notify_callback, label=f"start_notify({service_name}/{char_name})")
                     logging.info('%s: Characteristic %s %s %s',
                                  self.config_dict['address'], service_name, char_name, 'enabled')
                     return True
@@ -518,7 +677,7 @@ class Device:
             char_uuid = char_dict.get(char_name, None)
             if char_uuid is not None:
                 try:
-                    await self.ble_client.stop_notify(char_uuid)
+                    await self._gatt_stop_notify(char_uuid, label=f"stop_notify({service_name}/{char_name})")
                     logging.info('%s: Characteristic %s %s %s',
                                  self.config_dict['address'], service_name, char_name, 'disabled')
                     return True
@@ -583,7 +742,7 @@ class Device:
                     await self.activate_service(service_name)
                 await asyncio.sleep(0.1)
         except Exception as e:
-            logging.warning(e)
+            logging.warning("%s: init_services failed: %s", self.config_dict.get("address"), e)
             raise DeviceError("Service initialization failed")
 
     async def sync_current_time(self):
@@ -599,7 +758,12 @@ class Device:
         adjust_reason = 0
         format_string = '<HBBBBBBBB'
         packed_data = struct.pack(format_string, year, month, day, hours, minutes, seconds, day_of_week, exact_time_256, adjust_reason)
-        await self.ble_client.write_gatt_char(DEAN_UUID_CTS_CURRENT_TIME_CHAR, packed_data)
+        await self._gatt_write(
+            DEAN_UUID_CTS_CURRENT_TIME_CHAR,
+            packed_data,
+            post_gap_seconds=self.config_write_gap_seconds,
+            label="write_current_time",
+        )
 
     async def file_transfer_start(self, dean_mac, file_path, target_path):
         state = self._get_file_state(dean_mac)
@@ -722,7 +886,7 @@ class Device:
             await self._write_with_target(DEAN_UUID_INFERENCE_RAWDATA_CHAR, dean_mac, debug_packed_data)
             # logging.info("unitspace existence simulation end")
         except Exception as e:
-            logging.warning(e)
+            logging.warning("%s: unitspace_existence_simulation(%s) failed: %s", self.config_dict.get("address"), dean_mac, e)
             return
         
     async def unitspace_existence_callback(self, dean_mac, command_string):
@@ -735,7 +899,7 @@ class Device:
             await self._write_with_target(DEAN_UUID_INFERENCE_RAWDATA_CHAR, dean_mac, packed_validity_packet)
             # logging.info("unitspace existence estimation end")
         except Exception as e:
-            logging.warning(e)
+            logging.warning("%s: unitspace_existence_callback(%s) failed: %s", self.config_dict.get("address"), dean_mac, e)
             return
         
     async def unitspace_existenc_intial_configuration(self, dean_mac, command_string):
@@ -753,8 +917,8 @@ class Device:
             config_service = self.get_service_by_uuid(DEAN_UUID_CONFIG_SERVICE)
             if not await self.load_config():
                 if config_service is not None:
-                    self.config_dict['name'] = str(await self.ble_client.read_gatt_char(DEAN_UUID_CONFIG_NAME_CHAR), 'utf-8')
-                    self.config_dict['location'] = str(await self.ble_client.read_gatt_char(DEAN_UUID_CONFIG_LOCATION_CHAR), 'utf-8')
+                    self.config_dict['name'] = str(await self._gatt_read(DEAN_UUID_CONFIG_NAME_CHAR, label="read_config_name"), 'utf-8')
+                    self.config_dict['location'] = str(await self._gatt_read(DEAN_UUID_CONFIG_LOCATION_CHAR, label="read_config_location"), 'utf-8')
                     self.save_config()
                 else:
                     raise DeviceError("Device configuration failed")
@@ -773,7 +937,7 @@ class Device:
             await self.init_services()
             return True
         except DeviceError as e:
-            logging.warning(e)
+            logging.warning("%s: BLE worker failed: %s", self.config_dict.get("address"), e)
             await self.remove()
             return False
     
@@ -862,16 +1026,44 @@ class DeviceManager:
             else:
                 return "Argument 2 must be 'enable', 'disable', 'activate all', 'deactivate all'".encode()
         elif cmd == 'list':
-            known_deans.refresh_connection_states(30)
-            entries = [e for e in known_deans.iter_entries() if e.connected]
+            now = time.time()
+            known_deans.refresh_connection_states(DEAN_STATUS_TIMEOUT_SECONDS)
+            entries = [
+                e for e in known_deans.iter_entries()
+                if e.connected or getattr(e, "reconnects", 0) >= 1
+            ]
             if entries:
-                return_msg = f"{'Dean MAC':<20}{'Relay':<20}{'Type':<10}{'Location':<15}{'Connected':<10}\n"
+                return_msg = (
+                    f"{'Dean MAC':<20}{'Relay':<20}{'Type':<10}{'Name':<15}{'Location':<15}"
+                    f"{'Connected':<10}{'LastSeen(s)':<12}{'LastPkt':<18}\n"
+                )
                 for entry in entries:
-                    return_msg += f"{entry.mac:<20}{entry.relay_address:<20}{entry.device_type:<10}{entry.location:<15}{entry.connected:<10}\n"
-            else:
-                return_msg = f"{'Address':<20}{'Type':<10}{'Name':<15}{'Location':<15}{'Connected':<10}\n"
-                for value in connected_devices.values():
-                    return_msg += f"{value.config_dict['address']:<20}{value.config_dict['type']:<10}{value.config_dict['name']:<15}{value.config_dict['location']:<15}{value.is_connected:<10}\n"
+                    if entry.last_seen:
+                        last_seen_age = str(int(now - entry.last_seen))
+                    else:
+                        last_seen_age = "-"
+                    last_pkt = "heartbeat" if entry.last_packet_is_heartbeat else (entry.last_packet or "-")
+                    return_msg += (
+                        f"{entry.mac:<20}{entry.relay_address:<20}{entry.device_type:<10}{entry.name:<15}{entry.location:<15}"
+                        f"{str(entry.connected):<10}{last_seen_age:<12}{last_pkt:<18}\n"
+                    )
+
+                if connected_devices:
+                    return_msg += "\n"
+                    return_msg += f"{'Relay MAC':<20}{'Type':<12}{'Name':<15}{'Location':<15}{'Connected':<10}\n"
+                    for value in connected_devices.values():
+                        return_msg += (
+                            f"{value.config_dict['address']:<20}{value.config_dict['type']:<12}{value.config_dict['name']:<15}"
+                            f"{value.config_dict['location']:<15}{str(value.is_connected):<10}\n"
+                        )
+                return return_msg.encode()
+
+            return_msg = f"{'Address':<20}{'Type':<12}{'Name':<15}{'Location':<15}{'Connected':<10}\n"
+            for value in connected_devices.values():
+                return_msg += (
+                    f"{value.config_dict['address']:<20}{value.config_dict['type']:<12}{value.config_dict['name']:<15}"
+                    f"{value.config_dict['location']:<15}{str(value.is_connected):<10}\n"
+                )
             return return_msg.encode()
 
         elif cmd == 'apply':

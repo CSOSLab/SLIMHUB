@@ -54,8 +54,12 @@ class KnownDean:
     device_type: str
     name: str = ""
     location: str = ""
+    first_seen: float = 0.0
     last_seen: float = 0.0
     connected: bool = False
+    reconnects: int = 0
+    last_packet: str = ""
+    last_packet_is_heartbeat: bool = False
 
 
 class KnownDeanTable:
@@ -74,10 +78,17 @@ class KnownDeanTable:
         if entry is None:
             entry = KnownDean(mac=mac_str, relay_address=relay_address, device_type=device_type)
             self._entries[mac_str] = entry
+            entry.first_seen = time.time()
+        prev_last_seen = entry.last_seen
+        was_connected = entry.connected
         entry.relay_address = relay_address
         entry.device_type = device_type or entry.device_type
         entry.last_seen = time.time()
+        if entry.first_seen == 0.0:
+            entry.first_seen = entry.last_seen
         entry.connected = True
+        if prev_last_seen > 0.0 and not was_connected:
+            entry.reconnects += 1
         if location_hint and not entry.location:
             entry.location = location_hint
         return entry
