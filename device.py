@@ -197,6 +197,8 @@ class Device:
         # Serialize GATT ops to avoid BlueZ "Unlikely Error" from overlapping operations.
         self._gatt_lock = asyncio.Lock()
         self._next_gatt_ok_at = 0.0
+        # Serialize connect attempts; main loop may call ble_client_start repeatedly.
+        self._connect_lock = asyncio.Lock()
     
     def __repr__(self):
         return f"{self.__class__.__name__}: {self.config_dict['address']}, {self.config_dict['type']}, {self.config_dict['name']}, {self.config_dict['location']}"
@@ -233,13 +235,25 @@ class Device:
         # Backward-compat read supports legacy slug filenames, but we only write the
         # colon-form filename going forward to keep config directory human-readable.
 
-    def _hydrate_dean_entry_from_disk(self, entry) -> bool:
+    def _hydrate_dean_entry_from_disk(self, entry, *, overwrite: bool = False) -> bool:
         json_data = self._read_dean_config_file(entry.mac)
         if not json_data:
             return False
-        entry.name = entry.name or json_data.get("name", "")
-        entry.location = entry.location or json_data.get("location", "")
-        entry.device_type = entry.device_type or json_data.get("type", "")
+        disk_name = json_data.get("name")
+        disk_location = json_data.get("location")
+        disk_type = json_data.get("type")
+
+        if overwrite:
+            if disk_name:
+                entry.name = disk_name
+            if disk_location:
+                entry.location = disk_location
+            if disk_type:
+                entry.device_type = disk_type
+        else:
+            entry.name = entry.name or (disk_name or "")
+            entry.location = entry.location or (disk_location or "")
+            entry.device_type = entry.device_type or (disk_type or "")
         return True
 
     def _is_heartbeat_rawdata_packet(self, payload: bytes) -> bool:
@@ -262,12 +276,17 @@ class Device:
             return False
         return all(v == -128 for v in sound_logits)
 
-    def _maybe_apply_dean_config_on_heartbeat(self, dean_entry, payload: bytes):
-        if not self._is_heartbeat_rawdata_packet(payload):
+    def _maybe_apply_dean_config_on_heartbeat(self, dean_entry, payload: bytes, *, is_heartbeat=None):
+        if is_heartbeat is None:
+            is_heartbeat = self._is_heartbeat_rawdata_packet(payload)
+        if not is_heartbeat:
             return
         canonical = try_normalize_mac_string(dean_entry.mac)
         if canonical is None:
             return
+        # Even if we skip reapplying config due to cooldown/inflight, always refresh the
+        # local name/location/type from disk so `list` reflects the configured metadata.
+        self._hydrate_dean_entry_from_disk(dean_entry, overwrite=True)
         if canonical in self._config_apply_inflight:
             return
         last = self._config_apply_last_attempt.get(canonical, 0.0)
@@ -329,6 +348,33 @@ class Device:
             return bytes([payload])
         raise DeviceError(f"Unsupported payload type {type(payload)}")
 
+    async def _ensure_services_discovered(self) -> bool:
+        if self.ble_client is None:
+            return False
+        try:
+            if getattr(self.ble_client, "services", None):
+                return True
+        except Exception:
+            pass
+
+        backend = getattr(self.ble_client, "_backend", None)
+        if backend is not None:
+            discover = getattr(backend, "_get_services", None)
+            if callable(discover):
+                try:
+                    await discover()
+                except Exception:
+                    pass
+
+        for _ in range(20):
+            try:
+                if getattr(self.ble_client, "services", None):
+                    return True
+            except Exception:
+                pass
+            await asyncio.sleep(0.1)
+        return False
+
     async def _gatt_run(self, op_label: str, op_coro_factory, *, post_gap_seconds: float = 0.0):
         async with self._gatt_lock:
             now = time.monotonic()
@@ -337,6 +383,13 @@ class Device:
             try:
                 return await op_coro_factory()
             except Exception as e:
+                msg = str(e)
+                if "Service Discovery has not been performed yet" in msg:
+                    try:
+                        await self._ensure_services_discovered()
+                        return await op_coro_factory()
+                    except Exception as e2:
+                        raise DeviceError(f"GATT {op_label} failed after discovery retry: {e2}") from e2
                 raise DeviceError(f"GATT {op_label} failed: {e}") from e
             finally:
                 self._next_gatt_ok_at = time.monotonic() + self.gatt_min_gap_seconds + float(post_gap_seconds)
@@ -446,15 +499,18 @@ class Device:
             logging.warning("Received %s/%s packet without MAC prefix", service_name, char_name)
             return
 
-        self._hydrate_dean_entry_from_disk(dean_entry)
+        is_heartbeat_rawdata = False
+        if service_name == 'inference' and char_name == 'rawdata':
+            is_heartbeat_rawdata = self._is_heartbeat_rawdata_packet(payload)
+        self._hydrate_dean_entry_from_disk(dean_entry, overwrite=is_heartbeat_rawdata)
 
         dean_mac = dean_entry.mac
         dean_entry.last_seen = received_time
         dean_entry.last_packet = f"{service_name}/{char_name}"
         dean_entry.last_packet_is_heartbeat = False
         if service_name == 'inference' and char_name == 'rawdata':
-            dean_entry.last_packet_is_heartbeat = self._is_heartbeat_rawdata_packet(payload)
-            self._maybe_apply_dean_config_on_heartbeat(dean_entry, payload)
+            dean_entry.last_packet_is_heartbeat = is_heartbeat_rawdata
+            self._maybe_apply_dean_config_on_heartbeat(dean_entry, payload, is_heartbeat=is_heartbeat_rawdata)
 
         location = dean_entry.location or self.config_dict['location']
         device_type = dean_entry.device_type or self.config_dict['type']
@@ -908,11 +964,8 @@ class Device:
     async def _connect_device(self):
         try:
             await self.ble_client.connect()
-            #NEW CODE: Wait for services to be discovered (up to ~1 second)
-            for _ in range(10):  # Wait up to 1 second in 0.1초 간격
-                if self.ble_client.services:
-                    break
-                await asyncio.sleep(0.1)
+            if not await self._ensure_services_discovered():
+                raise DeviceError("Service discovery failed")
             #OLD CODE: await asyncio.sleep(0.1)
             config_service = self.get_service_by_uuid(DEAN_UUID_CONFIG_SERVICE)
             if not await self.load_config():
@@ -942,15 +995,29 @@ class Device:
             return False
     
     async def ble_client_start(self):
-        retry_count = 3
-        for attempt in range(retry_count):
-            try:
-                return await self._ble_worker()
-            except DeviceError as e:
-                logging.warning(f"{self.config_dict['address']}: Connection failed, retrying... ({attempt + 1}/{retry_count})")
-                await asyncio.sleep(2)  # 2초 후 재시도
-        logging.error(f"{self.config_dict['address']}: Failed to connect after {retry_count} attempts")
-        return False    
+        async with self._connect_lock:
+            if self.ble_client is not None:
+                try:
+                    if self.ble_client.is_connected:
+                        self.is_connected = True
+                        return True
+                except Exception:
+                    pass
+
+            retry_count = 3
+            for attempt in range(retry_count):
+                try:
+                    return await self._ble_worker()
+                except DeviceError:
+                    logging.warning(
+                        "%s: Connection failed, retrying... (%d/%d)",
+                        self.config_dict['address'],
+                        attempt + 1,
+                        retry_count,
+                    )
+                    await asyncio.sleep(2)
+            logging.error("%s: Failed to connect after %d attempts", self.config_dict['address'], retry_count)
+            return False
             
 
 class DeviceManager:

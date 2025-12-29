@@ -139,6 +139,7 @@ class UnitspaceManager_new_new:
         self.lock = asyncio.Lock()
         self.last_address = None
         self.last_location = "ENTRY"
+        self.last_device_type = None
         self.last_received_time = 0
         self.active_count = 0
         
@@ -190,7 +191,7 @@ class UnitspaceManager_new_new:
                 if address == self.last_address:
                     if current_received_time - self.last_received_time >= 5:
                         # print(f"Exceeded time out (120s) - send exit signal")
-                        print("Same signal reacehd {location}")
+                        print(f"Same signal reacehd {location}")
                         # await current_device_obj.unitspace_existence_callback("strong_exit")
                         # current_device_obj.data_queue.put([ current_device_obj.config_dict['location'],
                         #                                     current_device_obj.config_dict['type'],
@@ -202,31 +203,33 @@ class UnitspaceManager_new_new:
                 elif address != self.last_address:
                     print(f"From \"{self.last_location}\" to \"{location}\" moved")
                     await self._send_unitspace_command(current_device_obj, address, "strong_enter")
-                    current_device_obj.data_queue.put([ current_device_obj.config_dict['location'],
-                                                        current_device_obj.config_dict['type'],
-                                                        current_device_obj.config_dict['address'], 
-                                                        service_name, char_name, received_time, rawdata])
+                    # `current_device_obj` is often the relay device for terminal DEAN nodes.
+                    # Log using the terminal DEAN identity carried by (location/device_type/address).
+                    current_device_obj.data_queue.put([location, device_type, address,
+                                                       service_name, char_name, received_time, rawdata])
                     
                     if self.last_address is not None:
-                        last_device_obj = get_device_by_address(self.last_address)
                         tmp_fmt = '<BBBfffffB20b'
                         tmp_unpacked_data = struct.unpack(tmp_fmt, rawdata)
                         tmp_unpacked_data_list = list(tmp_unpacked_data)
                         tmp_unpacked_data_list[1] = 20
                         repacked_data = struct.pack(tmp_fmt, *tmp_unpacked_data_list)
-                        await self._send_unitspace_command(last_device_obj, self.last_address, "strong_exit")
-                        if last_device_obj is not None:
-                            last_device_obj.data_queue.put([last_device_obj.config_dict['location'],
-                                                            last_device_obj.config_dict['type'],
-                                                            last_device_obj.config_dict['address'], 
-                                                            service_name, char_name, received_time, repacked_data])
+                        await self._send_unitspace_command(None, self.last_address, "strong_exit")
+                        last_location = self.last_location or location
+                        last_type = self.last_device_type or device_type
+                        current_device_obj.data_queue.put([last_location, last_type, self.last_address,
+                                                           service_name, char_name, received_time, repacked_data])
                         print(f"Exit signal sended to {self.last_location}")
             elif received_signal == 20:
                 print(f"{location} - Active signal reacehed")
                 await self._send_unitspace_command(current_device_obj, address, "strong_exit")
+                # Log EXIT packets too, so IN/OUT sequences are visible in rawdata logs.
+                current_device_obj.data_queue.put([location, device_type, address,
+                                                   service_name, char_name, received_time, rawdata])
                 
             self.last_address = address
             self.last_location = location
+            self.last_device_type = device_type
             self.last_received_time = current_received_time
             self.active_count = 0   # redundant value
             
